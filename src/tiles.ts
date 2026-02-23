@@ -165,19 +165,12 @@ export const TILE_COUNTS = {
   total: 148
 };
 
-// Check if tile matches (ignores index for numbered/honor tiles)
+// Check if two tiles are the same type (ignores copy index)
 export function tilesMatch(tile1: Tile, tile2: Tile): boolean {
-  if (tile1.suit !== tile2.suit) return false;
-  if (tile1.isBonus || tile2.isBonus) {
-    return tile1.value === tile2.value;
-  }
-  return tile1.value === tile2.value;
+  return tile1.suit === tile2.suit && tile1.value === tile2.value;
 }
 
 // Get all copies of a tile (for hand evaluation)
 export function getTileMatches(tiles: Tile[], target: Tile): Tile[] {
   return tiles.filter(t => tilesMatch(t, target));
 }
-
-// Export types for external use
-export type { NumberedTile, HonorTile, BonusTile };

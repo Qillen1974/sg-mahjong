@@ -9,7 +9,7 @@ This project is a digital recreation of Singapore Mahjong, a popular variant of 
 ## Game Features
 
 - Full Singapore Mahjong ruleset
-- Tile-based gameplay with 144 tiles
+- Tile-based gameplay with 148 tiles
 - Scoring system based on Singapore Mahjong conventions
 - 4-player multiplayer support
 - TypeScript implementation for type safety and maintainability
@@ -48,9 +48,11 @@ npm start
 ## Project Structure
 
 ```
-singapore-mahjong/
+sg-mahjong/
 ├── src/
-│   └── index.ts       # Entry point
+│   ├── index.ts       # Library entry point (re-exports)
+│   ├── tiles.ts       # Tile definitions (all 148 tiles)
+│   └── scoring.ts     # Hand scoring (tai calculation)
 ├── package.json       # Project metadata
 ├── tsconfig.json      # TypeScript configuration
 └── README.md          # This file
@@ -58,14 +60,14 @@ singapore-mahjong/
 
 ## How to Play
 
-Singapore Mahjong is played with 4 players. The game uses 144 tiles consisting of:
+Singapore Mahjong is played with 4 players. The game uses 148 tiles consisting of:
 
-- **Suits**: Dots (Circles), Bamboo (Sticks), Characters (Numbers) - 9 tiles each (×4 = 108 tiles)
-- **Honors**: Winds (East, South, West, North) and Dragons (Red, Green, White) - 7 types (×4 = 28 tiles)
-- **Flowers**: 4 tiles (1 of each)
-- **Seasons**: 4 tiles (1 of each)
+- **Suits**: Dots (Circles), Bamboo (Sticks), Characters (Numbers) — 9 tiles each ×4 = 108 tiles
+- **Honors**: Winds (East, South, West, North) and Dragons (Red, Green, White) — 7 types ×4 = 28 tiles
+- **Flowers**: Plum, Orchid, Bamboo, Chrysanthemum — 4 tiles
+- **Animals**: Cat, Mouse, Rooster, Centipede — 4 tiles (unique to Singapore Mahjong)
 
-The objective is to form complete hands (melds) and score points.
+Bonus tiles (Flowers and Animals) are set aside when drawn and replaced. The objective is to form a complete hand of 14 tiles (4 melds + 1 pair) and score the minimum required tai.
 
 ## Contributing
 
