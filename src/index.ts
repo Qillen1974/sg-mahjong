@@ -1,13 +1,6 @@
 /**
- * Singapore Mahjong Game
- * Entry Point
+ * sg-mahjong - Singapore Mahjong TypeScript Library
  */
 
-console.log("Welcome to Singapore Mahjong!");
-
-// TODO: Implement game logic
-// - Tile definitions
-// - Player management
-// - Hand evaluation
-// - Scoring system
-// - Game flow (deal, draw, play, chi/pong/gang, hu)
+export * from './tiles';
+export * from './scoring';
