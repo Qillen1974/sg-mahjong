@@ -4,3 +4,5 @@
 
 export * from './tiles';
 export * from './scoring';
+export * from './wall';
+export * from './hand-parser';
