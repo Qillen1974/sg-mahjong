@@ -1,183 +1,143 @@
 /**
  * Singapore Mahjong Tile Definitions
- * Total: 148 tiles (144 standard + 4 bonus)
+ *
+ * Total: 148 tiles
+ *   Bamboo 1-9 x4 = 36
+ *   Dots 1-9 x4 = 36
+ *   Characters 1-9 x4 = 36
+ *   Winds (E/S/W/N) x4 = 16
+ *   Dragons (Red/Green/White) x4 = 12
+ *   Flowers (Plum/Orchid/Bamboo/Chrysanthemum) x1 = 4
+ *   Seasons (Spring/Summer/Autumn/Winter) x1 = 4
+ *   Animals (Cat/Mouse/Rooster/Centipede) x1 = 4
  */
 
-// Tile suits
-export type TileSuit = 'bamboo' | 'dots' | 'characters' | 'winds' | 'dragons' | 'flowers' | 'animals';
+export type NumberedSuit = 'bamboo' | 'dots' | 'characters';
+export type HonorSuit = 'winds' | 'dragons';
+export type BonusSuit = 'flowers' | 'seasons' | 'animals';
+export type TileSuit = NumberedSuit | HonorSuit | BonusSuit;
 
-// Tile numbers for numbered suits
 export type TileNumber = 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9;
-
-// Wind types
 export type Wind = 'east' | 'south' | 'west' | 'north';
-
-// Dragon types
 export type Dragon = 'red' | 'green' | 'white';
-
-// Flower types
 export type Flower = 'plum' | 'orchid' | 'bamboo' | 'chrysanthemum';
-
-// Animal types
+export type Season = 'spring' | 'summer' | 'autumn' | 'winter';
 export type Animal = 'cat' | 'mouse' | 'rooster' | 'centipede';
 
-// Base tile interface
 export interface Tile {
   id: string;
   suit: TileSuit;
-  value: number | string;
+  value: TileNumber | Wind | Dragon | Flower | Season | Animal;
   name: string;
   isBonus: boolean;
+  isHonor: boolean;
+  isTerminal: boolean;
 }
 
-// Numbered tile (Bamboo, Dots, Characters)
-export interface NumberedTile extends Tile {
-  suit: 'bamboo' | 'dots' | 'characters';
-  value: TileNumber;
+function capitalize(s: string): string {
+  return s.charAt(0).toUpperCase() + s.slice(1);
 }
 
-// Honor tile (Winds, Dragons)
-export interface HonorTile extends Tile {
-  suit: 'winds' | 'dragons';
-  value: Wind | Dragon;
-}
-
-// Bonus tile (Flowers, Animals)
-export interface BonusTile extends Tile {
-  suit: 'flowers' | 'animals';
-  value: Flower | Animal;
-}
-
-// Create numbered tile
-function createNumberedTile(suit: 'bamboo' | 'dots' | 'characters', num: TileNumber, index: number): NumberedTile {
-  const suitNames: Record<string, string> = {
-    bamboo: 'Bamboo',
-    dots: 'Dots',
-    characters: 'Characters'
-  };
+function createNumberedTile(suit: NumberedSuit, num: TileNumber, copy: number): Tile {
   return {
-    id: `${suit}_${num}_${index}`,
+    id: `${suit}_${num}_${copy}`,
     suit,
     value: num,
-    name: `${suitNames[suit]} ${num}`,
-    isBonus: false
+    name: `${capitalize(suit)} ${num}`,
+    isBonus: false,
+    isHonor: false,
+    isTerminal: num === 1 || num === 9,
   };
 }
 
-// Create honor tile
-function createHonorTile(suit: 'winds' | 'dragons', value: Wind | Dragon, index: number): HonorTile {
-  const suitNames: Record<string, string> = {
-    winds: 'Wind',
-    dragons: 'Dragon'
-  };
+function createHonorTile(suit: HonorSuit, value: Wind | Dragon, copy: number): Tile {
   return {
-    id: `${suit}_${value}_${index}`,
+    id: `${suit}_${value}_${copy}`,
     suit,
     value,
-    name: `${suitNames[suit]} ${value.charAt(0).toUpperCase() + value.slice(1)}`,
-    isBonus: false
+    name: `${capitalize(value)} ${suit === 'winds' ? 'Wind' : 'Dragon'}`,
+    isBonus: false,
+    isHonor: true,
+    isTerminal: false,
   };
 }
 
-// Create bonus tile
-function createBonusTile(suit: 'flowers' | 'animals', value: Flower | Animal): BonusTile {
-  const suitNames: Record<string, string> = {
-    flowers: 'Flower',
-    animals: 'Animal'
-  };
+function createBonusTile(suit: BonusSuit, value: Flower | Season | Animal): Tile {
   return {
     id: `${suit}_${value}`,
     suit,
     value,
-    name: `${suitNames[suit]} ${value.charAt(0).toUpperCase() + value.slice(1)}`,
-    isBonus: true
+    name: capitalize(value),
+    isBonus: true,
+    isHonor: false,
+    isTerminal: false,
   };
 }
 
-// Generate all tiles
 export function createAllTiles(): Tile[] {
   const tiles: Tile[] = [];
 
-  // Bamboo 1-9 x 4
-  for (let n = 1; n <= 9; n++) {
-    for (let i = 1; i <= 4; i++) {
-      tiles.push(createNumberedTile('bamboo', n as TileNumber, i));
+  // Numbered suits: Bamboo, Dots, Characters (9 values x 4 copies each)
+  const numberedSuits: NumberedSuit[] = ['bamboo', 'dots', 'characters'];
+  for (const suit of numberedSuits) {
+    for (let n = 1; n <= 9; n++) {
+      for (let c = 1; c <= 4; c++) {
+        tiles.push(createNumberedTile(suit, n as TileNumber, c));
+      }
     }
   }
 
-  // Dots 1-9 x 4
-  for (let n = 1; n <= 9; n++) {
-    for (let i = 1; i <= 4; i++) {
-      tiles.push(createNumberedTile('dots', n as TileNumber, i));
-    }
-  }
-
-  // Characters 1-9 x 4
-  for (let n = 1; n <= 9; n++) {
-    for (let i = 1; i <= 4; i++) {
-      tiles.push(createNumberedTile('characters', n as TileNumber, i));
-    }
-  }
-
-  // Winds x 4 (East, South, West, North)
+  // Winds (4 types x 4 copies)
   const winds: Wind[] = ['east', 'south', 'west', 'north'];
-  for (const wind of winds) {
-    for (let i = 1; i <= 4; i++) {
-      tiles.push(createHonorTile('winds', wind, i));
+  for (const w of winds) {
+    for (let c = 1; c <= 4; c++) {
+      tiles.push(createHonorTile('winds', w, c));
     }
   }
 
-  // Dragons x 4 (Red, Green, White)
+  // Dragons (3 types x 4 copies)
   const dragons: Dragon[] = ['red', 'green', 'white'];
-  for (const dragon of dragons) {
-    for (let i = 1; i <= 4; i++) {
-      tiles.push(createHonorTile('dragons', dragon, i));
+  for (const d of dragons) {
+    for (let c = 1; c <= 4; c++) {
+      tiles.push(createHonorTile('dragons', d, c));
     }
   }
 
-  // Flowers x 1 each
+  // Flowers (4 unique)
   const flowers: Flower[] = ['plum', 'orchid', 'bamboo', 'chrysanthemum'];
-  for (const flower of flowers) {
-    tiles.push(createBonusTile('flowers', flower));
-  }
+  for (const f of flowers) tiles.push(createBonusTile('flowers', f));
 
-  // Animals x 1 each
+  // Seasons (4 unique)
+  const seasons: Season[] = ['spring', 'summer', 'autumn', 'winter'];
+  for (const s of seasons) tiles.push(createBonusTile('seasons', s));
+
+  // Animals (4 unique)
   const animals: Animal[] = ['cat', 'mouse', 'rooster', 'centipede'];
-  for (const animal of animals) {
-    tiles.push(createBonusTile('animals', animal));
-  }
+  for (const a of animals) tiles.push(createBonusTile('animals', a));
 
   return tiles;
 }
 
-// Pre-generated tile collection
-export const allTiles = createAllTiles();
+export const ALL_TILES = createAllTiles();
 
-// Tile counts
 export const TILE_COUNTS = {
-  bamboo: 36,    // 9 x 4
-  dots: 36,      // 9 x 4
-  characters: 36, // 9 x 4
-  winds: 16,     // 4 x 4
-  dragons: 12,   // 3 x 4
-  flowers: 4,    // 1 each
-  animals: 4,    // 1 each
-  total: 148
-};
+  bamboo: 36,
+  dots: 36,
+  characters: 36,
+  winds: 16,
+  dragons: 12,
+  flowers: 4,
+  seasons: 4,
+  animals: 4,
+  total: 148,
+} as const;
 
-// Check if tile matches (ignores index for numbered/honor tiles)
-export function tilesMatch(tile1: Tile, tile2: Tile): boolean {
-  if (tile1.suit !== tile2.suit) return false;
-  if (tile1.isBonus || tile2.isBonus) {
-    return tile1.value === tile2.value;
-  }
-  return tile1.value === tile2.value;
+/** Check if two tiles are the same kind (ignoring copy index). */
+export function tilesMatch(a: Tile, b: Tile): boolean {
+  return a.suit === b.suit && a.value === b.value;
 }
 
-// Get all copies of a tile (for hand evaluation)
-export function getTileMatches(tiles: Tile[], target: Tile): Tile[] {
-  return tiles.filter(t => tilesMatch(t, target));
+/** Unique key for grouping identical tiles. */
+export function tileKey(t: Tile): string {
+  return `${t.suit}_${t.value}`;
 }
-
-// Export types for external use
-export type { NumberedTile, HonorTile, BonusTile };

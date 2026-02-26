@@ -1,21 +1,43 @@
 /**
  * Singapore Mahjong Hand Scoring Utility
- * Calculates tai (points) based on hand composition
+ *
+ * In Singapore Mahjong, bonus tiles (flowers, seasons, animals) are set aside
+ * when drawn and replaced. They are NOT part of the 14-tile hand.
+ * A winning hand = 14 tiles (4 sets + 1 pair, or 7 pairs, or 13 orphans).
+ * Bonus tiles contribute extra tai on top of the hand score.
+ *
+ * Tai values follow common Singapore tournament rules.
  */
 
-import { Tile, NumberedTile, HonorTile, BonusTile, tilesMatch, allTiles } from './tiles';
+import { Tile, tileKey, NumberedSuit } from './tiles';
 
-// Mahjong hand structure
-export interface Hand {
+// ---------------------------------------------------------------------------
+// Types
+// ---------------------------------------------------------------------------
+
+export interface MeldedSet {
+  type: 'chow' | 'pung' | 'kong';
   tiles: Tile[];
+  concealed: boolean;
 }
 
-// Scoring result
-export interface ScoringResult {
-  tai: number;
-  handType: string;
-  description: string;
-  details: ScoringDetail[];
+export interface WinningHand {
+  /** The 14 tiles forming the hand (excluding bonus). */
+  handTiles: Tile[];
+  /** Melded sets (open or concealed). */
+  melds: MeldedSet[];
+  /** The pair (eyes). */
+  pair: Tile[];
+  /** Bonus tiles set aside. */
+  bonusTiles: Tile[];
+  /** Player seat wind. */
+  seatWind: 'east' | 'south' | 'west' | 'north';
+  /** Prevailing (round) wind. */
+  prevailingWind: 'east' | 'south' | 'west' | 'north';
+  /** Whether the hand was self-drawn (zi mo). */
+  selfDrawn: boolean;
+  /** Whether this is the very first draw (for heavenly/earthly hand). */
+  firstDraw: boolean;
 }
 
 export interface ScoringDetail {
@@ -23,259 +45,223 @@ export interface ScoringDetail {
   tai: number;
 }
 
-// Constants for special hands
-export const SPECIAL_HANDS = {
-  HEAVENLY_HAND: 'Heavenly Hand',
-  EARTHLY_HAND: 'Earthly Hand',
-  KNOCKED_FOUR_CHOWS: 'Knocked Four Chows',
-  FOUR_CONCEALED_PUNGS: 'Four Concealed Pungs',
-  FOUR_PUNGS: 'Four Pungs',
-  LITTLE_FOUR_WINDS: 'Little Four Winds',
-  BIG_FOUR_WINDS: 'Big Four Winds',
-  FOUR_DRAGONS: 'Four Dragons',
-  SEVEN_PAIRS: 'Seven Pairs',
-  THIRTEEN_ORPHANS: 'Thirteen Orphans'
-};
+export interface ScoringResult {
+  tai: number;
+  details: ScoringDetail[];
+}
 
-// Basic hand types
-export const HAND_TYPES = {
-  PUNG: 'Pung',
-  KONG: 'Kong',
-  CHOW: 'Chow',
-  PAIR: 'Pair',
-  EYE: 'Eye'
-};
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
 
-// Count tile occurrences in hand
-function countTiles(tiles: Tile[]): Map<string, number> {
-  const counts = new Map<string, number>();
-  for (const tile of tiles) {
-    const key = `${tile.suit}_${tile.value}`;
-    counts.set(key, (counts.get(key) || 0) + 1);
+function countByKey(tiles: Tile[]): Map<string, number> {
+  const m = new Map<string, number>();
+  for (const t of tiles) {
+    const k = tileKey(t);
+    m.set(k, (m.get(k) || 0) + 1);
   }
-  return counts;
+  return m;
 }
 
-// Check for pung (3 identical tiles)
-function hasPung(tileCounts: Map<string, number>): boolean {
-  return Array.from(tileCounts.values()).some(count => count >= 3);
+function isNumberedSuit(suit: string): suit is NumberedSuit {
+  return suit === 'bamboo' || suit === 'dots' || suit === 'characters';
 }
 
-// Check for kong (4 identical tiles)
-function hasKong(tileCounts: Map<string, number>): boolean {
-  return Array.from(tileCounts.values()).some(count => count >= 4);
-}
-
-// Check for pair (2 identical tiles)
-function hasPair(tileCounts: Map<string, number>): boolean {
-  return Array.from(tileCounts.values()).some(count => count >= 2);
-}
-
-// Count pungs in hand
-function countPungs(tileCounts: Map<string, number>): number {
-  let pungs = 0;
-  for (const [key, count] of tileCounts) {
-    if (count >= 3) pungs++;
+function getNumberedSuits(tiles: Tile[]): Set<NumberedSuit> {
+  const suits = new Set<NumberedSuit>();
+  for (const t of tiles) {
+    if (isNumberedSuit(t.suit)) suits.add(t.suit);
   }
-  return pungs;
+  return suits;
 }
 
-// Count kongs in hand
-function countKongs(tileCounts: Map<string, number>): number {
-  let kongs = 0;
-  for (const count of tileCounts.values()) {
-    if (count >= 4) kongs++;
-  }
-  return kongs;
-}
-
-// Count pairs in hand
-function countPairs(tileCounts: Map<string, number>): number {
-  let pairs = 0;
-  for (const count of tileCounts.values()) {
-    if (count >= 2) pairs++;
-  }
-  return pairs;
-}
-
-// Check if hand is all one suit (pure hand)
-function isPureHand(tiles: Tile[]): boolean {
-  const suits = new Set(tiles.map(t => t.suit));
-  const nonBonusSuits = Array.from(suits).filter(s => s !== 'flowers' && s !== 'animals');
-  return nonBonusSuits.size === 1;
-}
-
-// Check if hand has mixed suit
-function isMixedSuit(tiles: Tile[]): boolean {
-  const suits = new Set(tiles.map(t => t.suit));
-  const nonBonusSuits = Array.from(suits).filter(s => s !== 'flowers' && s !== 'animals');
-  return nonBonusSuits.size > 1;
-}
-
-// Count bonus tiles (flowers and animals)
-function countBonusTiles(tiles: Tile[]): number {
-  return tiles.filter(t => t.isBonus).length;
-}
-
-// Check for same suit honors
 function hasHonors(tiles: Tile[]): boolean {
-  return tiles.some(t => t.suit === 'winds' || t.suit === 'dragons');
+  return tiles.some(t => t.isHonor);
 }
 
-// Check for terminal tiles (1 and 9)
-function hasTerminals(tiles: Tile[]): boolean {
-  return tiles.some(t => {
-    if (t.suit === 'bamboo' || t.suit === 'dots' || t.suit === 'characters') {
-      const num = (t as NumberedTile).value;
-      return num === 1 || num === 9;
-    }
-    return false;
-  });
+// ---------------------------------------------------------------------------
+// Scoring functions
+// ---------------------------------------------------------------------------
+
+/** Score bonus tiles (flowers, seasons, animals). */
+function scoreBonusTiles(bonus: Tile[]): ScoringDetail[] {
+  const details: ScoringDetail[] = [];
+  const flowers = bonus.filter(t => t.suit === 'flowers');
+  const seasons = bonus.filter(t => t.suit === 'seasons');
+  const animals = bonus.filter(t => t.suit === 'animals');
+
+  if (flowers.length === 4) {
+    details.push({ name: 'Complete Flowers', tai: 8 });
+  } else if (flowers.length > 0) {
+    details.push({ name: flowers.length + ' Flower(s)', tai: flowers.length });
+  }
+
+  if (seasons.length === 4) {
+    details.push({ name: 'Complete Seasons', tai: 8 });
+  } else if (seasons.length > 0) {
+    details.push({ name: seasons.length + ' Season(s)', tai: seasons.length });
+  }
+
+  if (animals.length === 4) {
+    details.push({ name: 'Complete Animals', tai: 8 });
+  } else if (animals.length > 0) {
+    details.push({ name: animals.length + ' Animal(s)', tai: animals.length });
+  }
+
+  return details;
 }
 
-// Calculate base tai from hand composition
-export function calculateTai(hand: Hand): number {
-  const tiles = hand.tiles;
-  const tileCounts = countTiles(tiles);
-  
-  let tai = 0;
+/** Score melds (pungs, kongs, chows). */
+function scoreMelds(
+  melds: MeldedSet[],
+  seatWind: string,
+  prevailingWind: string,
+): ScoringDetail[] {
   const details: ScoringDetail[] = [];
 
-  // Validate hand size (should be 14 tiles)
-  if (tiles.length !== 14) {
-    return 0;
-  }
+  for (const meld of melds) {
+    const rep = meld.tiles[0];
+    const isPungLike = meld.type === 'pung' || meld.type === 'kong';
 
-  // Count pungs and kongs
-  const pungs = countPungs(tileCounts);
-  const kongs = countKongs(tileCounts);
-  const pairs = countPairs(tileCounts);
-  const bonusCount = countBonusTiles(tiles);
+    if (!isPungLike) continue;
 
-  // Bonus tile scoring (each flower/animal = 1 tai, all 4 = 8 tai)
-  if (bonusCount > 0) {
-    if (bonusCount === 4) {
-      tai += 8;
-      details.push({ name: 'All Flowers/Animals', tai: 8 });
-    } else {
-      tai += bonusCount;
-      details.push({ name: 'Bonus Tiles', tai: bonusCount });
+    // Dragon pung/kong = 1 tai
+    if (rep.suit === 'dragons') {
+      details.push({ name: 'Pung of ' + rep.name, tai: 1 });
+    }
+    // Seat wind pung/kong = 1 tai
+    if (rep.suit === 'winds' && rep.value === seatWind) {
+      details.push({ name: 'Pung of Seat Wind (' + rep.value + ')', tai: 1 });
+    }
+    // Prevailing wind pung/kong = 1 tai
+    if (rep.suit === 'winds' && rep.value === prevailingWind) {
+      details.push({ name: 'Pung of Prevailing Wind (' + rep.value + ')', tai: 1 });
+    }
+    // Kong bonus = 1 extra tai
+    if (meld.type === 'kong') {
+      details.push({ name: 'Kong of ' + rep.name, tai: 1 });
     }
   }
 
-  // Pung of honor tiles
-  const honorPungs = Array.from(tileCounts.entries())
-    .filter(([key, count]) => count >= 3 && (key.startsWith('winds_') || key.startsWith('dragons_')))
-    .length;
-  
-  if (honorPungs > 0) {
-    tai += honorPungs * 2;
-    details.push({ name: 'Honor Pungs', tai: honorPungs * 2 });
+  return details;
+}
+
+/** Score hand-level patterns. */
+function scoreHandPatterns(hand: WinningHand): ScoringDetail[] {
+  const details: ScoringDetail[] = [];
+  const tiles = hand.handTiles;
+  const numberedSuits = getNumberedSuits(tiles);
+  const honors = hasHonors(tiles);
+
+  // Pure hand (清一色): all tiles one numbered suit, no honors - 4 tai
+  if (numberedSuits.size === 1 && !honors) {
+    details.push({ name: 'Pure Hand', tai: 4 });
   }
 
-  // Pung of terminal tiles (1 or 9)
-  const terminalPungs = Array.from(tileCounts.entries())
-    .filter(([key, count]) => {
-      if (count < 3) return false;
-      const match = key.match(/^(bamboo|dots|characters)_(1|9)/);
-      return match !== null;
-    }).length;
-
-  if (terminalPungs > 0) {
-    tai += terminalPungs * 2;
-    details.push({ name: 'Terminal Pungs', tai: terminalPungs * 2 });
-  }
-
-  // Kong scoring (each kong = 2 tai)
-  if (kongs > 0) {
-    tai += kongs * 2;
-    details.push({ name: 'Kongs', tai: kongs * 2 });
-  }
-
-  // Pure hand (all one suit) = 6 tai
-  if (isPureHand(tiles) && pungs > 0) {
-    tai += 6;
-    details.push({ name: 'Pure Hand', tai: 6 });
-  }
-
-  // Mixed one-suit hand (two suits) = 3 tai
-  const suits = new Set(tiles.filter(t => !t.isBonus).map(t => t.suit));
-  if (suits.size === 2) {
-    tai += 3;
-    details.push({ name: 'Mixed One-Suit', tai: 3 });
-  }
-
-  // Mixed suit hand = 1 tai
-  if (isMixedSuit(tiles) && suits.size >= 3) {
-    tai += 1;
-    details.push({ name: 'Mixed Suit', tai: 1 });
-  }
-
-  // No honors or terminals (half flush) = 2 tai
-  if (!hasHonors(tiles) && !hasTerminals(tiles) && suits.size >= 2) {
-    tai += 2;
+  // Half flush (混一色): one numbered suit + honors - 2 tai
+  if (numberedSuits.size === 1 && honors) {
     details.push({ name: 'Half Flush', tai: 2 });
   }
 
-  // Dragon pung = 2 tai
-  const dragonPungs = Array.from(tileCounts.entries())
-    .filter(([key, count]) => count >= 3 && key.startsWith('dragons_'))
-    .length;
-  if (dragonPungs > 0) {
-    tai += dragonPungs * 2;
-    details.push({ name: 'Dragon Pungs', tai: dragonPungs * 2 });
+  // All pungs (对对和): 4 pungs/kongs + pair - 4 tai
+  const pungOrKong = hand.melds.filter(m => m.type === 'pung' || m.type === 'kong');
+  if (pungOrKong.length === 4) {
+    details.push({ name: 'All Pungs', tai: 4 });
   }
 
-  // Wind pair with seat wind = 1 tai
-  // (simplified - would need to know seat wind)
-  
-  // Seven pairs = 6 tai
-  if (pairs >= 7) {
-    tai += 6;
-    details.push({ name: 'Seven Pairs', tai: 6 });
+  // Concealed hand (门前清): all melds concealed - 1 tai
+  if (hand.melds.every(m => m.concealed)) {
+    details.push({ name: 'Concealed Hand', tai: 1 });
   }
 
-  // Ensure minimum tai of 1 for a valid complete hand
-  if (tai < 1) {
-    tai = 1;
-    details.push({ name: 'Minimum Hand', tai: 1 });
+  // Self-drawn (自摸) - 1 tai
+  if (hand.selfDrawn) {
+    details.push({ name: 'Self-Drawn', tai: 1 });
   }
 
-  return tai;
+  // Seven pairs (七对子) - 4 tai
+  const counts = countByKey(tiles);
+  const pairCount = Array.from(counts.values()).filter(c => c === 2).length;
+  if (pairCount === 7) {
+    details.push({ name: 'Seven Pairs', tai: 4 });
+  }
+
+  return details;
 }
 
-// Main scoring function
-export function scoreHand(hand: Hand): ScoringResult {
-  const tai = calculateTai(hand);
+/** Check for limit hands (instant max-tai patterns). */
+function checkLimitHand(hand: WinningHand): ScoringDetail | null {
+  const tiles = hand.handTiles;
+  const counts = countByKey(tiles);
+
+  // Thirteen Orphans (十三幺)
+  const orphanKeys = [
+    'bamboo_1', 'bamboo_9', 'dots_1', 'dots_9', 'characters_1', 'characters_9',
+    'winds_east', 'winds_south', 'winds_west', 'winds_north',
+    'dragons_red', 'dragons_green', 'dragons_white',
+  ];
+  const hasAllOrphans = orphanKeys.every(k => (counts.get(k) || 0) >= 1);
+  if (hasAllOrphans && tiles.length === 14) {
+    return { name: 'Thirteen Orphans', tai: 40 };
+  }
+
+  // Heavenly Hand (天和): dealer wins on first draw
+  if (hand.firstDraw && hand.seatWind === 'east') {
+    return { name: 'Heavenly Hand', tai: 40 };
+  }
+
+  // Earthly Hand (地和): non-dealer wins on first discard
+  if (hand.firstDraw && hand.seatWind !== 'east') {
+    return { name: 'Earthly Hand', tai: 40 };
+  }
+
+  // Big Four Winds (大四喜): pungs/kongs of all 4 winds
+  const windMelds = hand.melds.filter(
+    m => (m.type === 'pung' || m.type === 'kong') && m.tiles[0].suit === 'winds'
+  );
+  if (windMelds.length === 4) {
+    return { name: 'Big Four Winds', tai: 40 };
+  }
+
+  // Big Three Dragons (大三元): pungs/kongs of all 3 dragons
+  const dragonMelds = hand.melds.filter(
+    m => (m.type === 'pung' || m.type === 'kong') && m.tiles[0].suit === 'dragons'
+  );
+  if (dragonMelds.length === 3) {
+    return { name: 'Big Three Dragons', tai: 40 };
+  }
+
+  return null;
+}
+
+// ---------------------------------------------------------------------------
+// Main scoring entry point
+// ---------------------------------------------------------------------------
+
+/**
+ * Score a winning hand. Returns total tai and breakdown.
+ * Singapore Mahjong: minimum 1 tai to win, limit typically 40 tai.
+ */
+export function scoreHand(hand: WinningHand): ScoringResult {
+  // Limit hands override everything
+  const limit = checkLimitHand(hand);
+  if (limit) {
+    return { tai: limit.tai, details: [limit] };
+  }
+
   const details: ScoringDetail[] = [];
-  
-  // Generate description based on hand composition
-  const tiles = hand.tiles;
-  const tileCounts = countTiles(tiles);
-  const pungs = countPungs(tileCounts);
-  const kongs = countKongs(tileCounts);
-  const pairs = countPairs(tileCounts);
-  const bonusCount = countBonusTiles(tiles);
 
-  let handType = 'Standard Hand';
-  
-  if (pairs >= 7) {
-    handType = SPECIAL_HANDS.SEVEN_PAIRS;
-  } else if (pungs + kongs >= 4) {
-    handType = 'Pung Hand';
-  } else if (isPureHand(tiles)) {
-    handType = 'Pure Hand';
+  details.push(...scoreBonusTiles(hand.bonusTiles));
+  details.push(...scoreMelds(hand.melds, hand.seatWind, hand.prevailingWind));
+  details.push(...scoreHandPatterns(hand));
+
+  const tai = details.reduce((sum, d) => sum + d.tai, 0);
+
+  // Minimum 1 tai to win (chicken hand / 鸡和)
+  const finalTai = Math.max(tai, 1);
+  if (tai === 0) {
+    details.push({ name: 'Minimum Hand (Chicken)', tai: 1 });
   }
 
-  const description = `${handType}: ${pungs} pungs, ${kongs} kongs, ${pairs} pairs, ${bonusCount} bonus tiles`;
-
-  return {
-    tai,
-    handType,
-    description,
-    details
-  };
+  return { tai: finalTai, details };
 }
-
-// Export utility functions
-export { countTiles, countPungs, countKongs, countPairs, isPureHand, isMixedSuit };
