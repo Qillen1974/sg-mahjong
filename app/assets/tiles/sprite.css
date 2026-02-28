@@ -1,0 +1,57 @@
+/* Mahjong tile base styles */
+
+.tile {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--tile-width);
+  height: var(--tile-height);
+  border-radius: var(--tile-radius);
+  border: 1px solid var(--tile-border);
+  background: var(--tile-bg);
+  box-shadow: var(--tile-shadow);
+  cursor: default;
+  flex-shrink: 0;
+  position: relative;
+  overflow: hidden;
+}
+
+.tile svg {
+  width: 88%;
+  height: 88%;
+  pointer-events: none;
+}
+
+.tile.selectable {
+  cursor: pointer;
+}
+
+.tile.selectable:hover {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px var(--accent), var(--tile-shadow);
+}
+
+.tile.selected {
+  transform: translateY(-6px);
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px var(--accent), 0 4px 8px rgba(0,0,0,0.3);
+}
+
+/* Face-down tile back */
+.tile-back {
+  background: #2563eb;
+  border-color: #1d4ed8;
+}
+
+.tile-back::after {
+  content: '';
+  position: absolute;
+  inset: 3px;
+  border-radius: 2px;
+  border: 1px solid rgba(255,255,255,0.2);
+}
+
+/* Small tile variant for opponents/discards */
+.tile-small {
+  --tile-width: clamp(20px, 4.5vw, 34px);
+}

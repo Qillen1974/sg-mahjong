@@ -52,12 +52,15 @@ function shuffle(tiles: Tile[]): void {
  *
  * 1. Shuffle all 148 tiles.
  * 2. Reserve last 14 tiles as dead wall.
- * 3. Deal 13 tiles to each player (East, South, West, North).
- * 4. Deal 1 extra tile to East (dealer).
+ * 3. Deal 13 tiles to each player.
+ * 4. Deal 1 extra tile to dealer.
  * 5. Replace any bonus tiles in each player's hand from the back of the
  *    live wall, moving bonus tiles to the player's bonusTiles array.
+ *
+ * @param dealerIndex - Which player index (0-3) is dealer. Defaults to 0.
+ *   Dealer always gets seat wind 'east'. Other seats rotate accordingly.
  */
-export function dealGame(): GameSetup {
+export function dealGame(dealerIndex: number = 0): GameSetup {
   const allTiles = createAllTiles();
   shuffle(allTiles);
 
@@ -67,9 +70,10 @@ export function dealGame(): GameSetup {
   // Live wall is the remaining tiles
   const wall = allTiles;
 
-  const seats: Wind[] = ['east', 'south', 'west', 'north'];
-  const players = seats.map((seat): PlayerHand => ({
-    seat,
+  // Seat winds rotate so dealer is always East
+  const allSeats: Wind[] = ['east', 'south', 'west', 'north'];
+  const players = [0, 1, 2, 3].map((i): PlayerHand => ({
+    seat: allSeats[(i - dealerIndex + 4) % 4],
     handTiles: [],
     bonusTiles: [],
   })) as [PlayerHand, PlayerHand, PlayerHand, PlayerHand];
@@ -84,8 +88,8 @@ export function dealGame(): GameSetup {
     player.handTiles.push(wall.splice(0, 1)[0]);
   }
 
-  // Extra tile to dealer (East)
-  players[0].handTiles.push(wall.splice(0, 1)[0]);
+  // Extra tile to dealer
+  players[dealerIndex].handTiles.push(wall.splice(0, 1)[0]);
 
   // Replace bonus tiles for each player
   for (const player of players) {
