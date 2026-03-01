@@ -140,7 +140,7 @@ describe('fallbackDecision', () => {
     expect(decision.action.type).toBe('claimPong');
   });
 
-  it('should pass on non-scoring pong', () => {
+  it('should claim pong for non-scoring tile when it completes a meld', () => {
     const discard = findTile('bamboo', 3, 1);
     const state = makeTestState({
       players: [
@@ -160,8 +160,8 @@ describe('fallbackDecision', () => {
     ];
 
     const decision = fallbackDecision(state, 1, actions);
-    // Should pass since bamboo 3 is not a scoring tile
-    expect(decision.action.type).toBe('pass');
+    // Should claim pong since it completes a meld from a pair
+    expect(decision.action.type).toBe('claimPong');
   });
 
   it('should declare kong when available', () => {

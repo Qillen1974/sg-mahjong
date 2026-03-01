@@ -2,7 +2,7 @@
  * AI Module for Singapore Mahjong
  *
  * Uses MiniMax 2.5 API for decisions with a rule-based fallback strategy.
- * Reads MINIMAX_API_KEY from environment. Falls back to basic strategy
+ * Reads MINIMAX_API_KEY from environment. Falls back to strategy
  * if the API is unavailable or times out (5 seconds).
  */
 
@@ -68,8 +68,9 @@ export async function getAIDecision(
     try {
       const apiResult = await callMiniMaxAPI(state, playerIndex, validActions, apiKey);
       if (apiResult) return apiResult;
-    } catch {
-      // Fall through to fallback
+      console.warn(`[AI] MiniMax returned no usable result for player ${playerIndex}, using fallback`);
+    } catch (e) {
+      console.warn(`[AI] MiniMax API error for player ${playerIndex}:`, e);
     }
   }
 
@@ -210,16 +211,131 @@ function parseAPIResponse(
 // Fallback Rule-Based Strategy
 // ---------------------------------------------------------------------------
 
+/** Count tiles in hand by tileKey. */
+function countHand(handTiles: Tile[]): Map<string, number> {
+  const counts = new Map<string, number>();
+  for (const t of handTiles) {
+    const k = tileKey(t);
+    counts.set(k, (counts.get(k) || 0) + 1);
+  }
+  return counts;
+}
+
+/** Check if a suit is numbered (can form chows). */
+function isNumberedSuit(suit: string): boolean {
+  return suit === 'bamboo' || suit === 'dots' || suit === 'characters';
+}
+
 /**
- * Simple rule-based AI when the MiniMax API is unavailable.
+ * Count how many "groups" (pairs, triplets, sequential connections) a tile
+ * participates in. Higher = more useful to keep.
+ */
+function tileUsefulness(
+  tile: Tile,
+  counts: Map<string, number>,
+  seatWind: Wind,
+  prevailingWind: Wind,
+): number {
+  const key = tileKey(tile);
+  const count = counts.get(key) || 0;
+  let score = 0;
+
+  // Pair or triplet
+  if (count >= 3) score += 60; // keep triplets
+  if (count === 2) score += 25; // keep pairs
+
+  // Scoring honors are extra valuable
+  if (tile.suit === 'dragons') score += 12;
+  if (tile.suit === 'winds' && tile.value === seatWind) score += 12;
+  if (tile.suit === 'winds' && tile.value === prevailingWind) score += 12;
+
+  // Sequential connections for numbered suits
+  if (isNumberedSuit(tile.suit)) {
+    const val = tile.value as number;
+    const s = tile.suit;
+    // Adjacent tiles (1 away) — strong connection
+    if (counts.has(`${s}_${val - 1}`)) score += 10;
+    if (counts.has(`${s}_${val + 1}`)) score += 10;
+    // Gap tiles (2 away) — weaker connection
+    if (counts.has(`${s}_${val - 2}`)) score += 4;
+    if (counts.has(`${s}_${val + 2}`)) score += 4;
+  }
+
+  return score;
+}
+
+/**
+ * Evaluate how much claiming a meld improves the hand.
+ * Returns true if the claim is worthwhile.
+ */
+function shouldClaimMeld(
+  state: GameState,
+  playerIndex: number,
+  meldType: 'pong' | 'chow',
+): boolean {
+  const player = state.players[playerIndex];
+  const tile = state.lastDiscard!;
+  const counts = countHand(player.handTiles);
+
+  // How many complete groups (melds) does the player already have?
+  const existingMelds = player.openMelds.length;
+
+  // Count pairs and near-complete groups in hand
+  let pairs = 0;
+  let triplets = 0;
+  let sequences = 0;
+  const visited = new Set<string>();
+
+  for (const [key, count] of counts) {
+    if (count >= 3) triplets++;
+    else if (count >= 2) pairs++;
+  }
+
+  // Count sequential pairs in numbered suits
+  for (const t of player.handTiles) {
+    if (!isNumberedSuit(t.suit)) continue;
+    const val = t.value as number;
+    const adjKey = `${t.suit}_${val + 1}`;
+    const pairKey = `${tileKey(t)}-${adjKey}`;
+    if (!visited.has(pairKey) && counts.has(adjKey)) {
+      sequences++;
+      visited.add(pairKey);
+    }
+  }
+
+  const totalGroups = existingMelds + triplets + sequences;
+
+  // Need 4 melds + 1 pair to win
+  // Claim if it helps us get closer
+  if (meldType === 'pong') {
+    // Pong is almost always good — it completes a meld from a pair
+    const hasMatchingPair = (counts.get(tileKey(tile)) || 0) >= 2;
+    if (hasMatchingPair) return true; // completing a triplet
+
+    // Even if we just have 1 matching tile, claim if we're close to winning
+    return totalGroups >= 2;
+  }
+
+  if (meldType === 'chow') {
+    // Chow completes a sequence — good if we're building toward winning
+    // Be more selective early (need more groups), aggressive when close
+    return totalGroups >= 2;
+  }
+
+  return false;
+}
+
+/**
+ * Improved rule-based AI strategy.
  *
  * Priority:
  * 1. Always claim win if possible
  * 2. Declare self-win if possible
- * 3. Claim scoring melds (dragons, seat wind, prevailing wind)
- * 4. Declare kong if safe
- * 5. Discard: prefer isolated tiles, safe tiles (already discarded by others)
- * 6. Pass on non-scoring claims
+ * 3. Declare kong / promote pung to kong
+ * 4. Claim pong when it helps the hand
+ * 5. Claim chow when it helps the hand
+ * 6. Smart discard selection
+ * 7. Pass on unhelpful claims
  */
 export function fallbackDecision(
   state: GameState,
@@ -232,128 +348,121 @@ export function fallbackDecision(
     return { action: winAction, reasoning: 'Win available' };
   }
 
-  // 2. Declare kong if available
+  // 2. Declare kong / promote pung if available
   const kongAction = validActions.find(a => a.type === 'declareKong' || a.type === 'promotePungToKong');
   if (kongAction) {
     return { action: kongAction, reasoning: 'Kong available' };
   }
 
-  // 3. Claim pong for scoring tiles (dragons, seat wind, prevailing wind)
-  const pongAction = validActions.find(a => a.type === 'claimPong');
-  if (pongAction && state.lastDiscard) {
-    const tile = state.lastDiscard;
-    const player = state.players[playerIndex];
-    const isScoring =
-      tile.suit === 'dragons' ||
-      (tile.suit === 'winds' && (tile.value === player.seat || tile.value === state.prevailingWind));
-    if (isScoring) {
-      return { action: pongAction, reasoning: `Pong scoring tile: ${tile.name}` };
-    }
-  }
-
-  // 4. Claim kong from discard for scoring tiles
+  // 3. Claim kong from discard
   const claimKongAction = validActions.find(a => a.type === 'claimKong');
-  if (claimKongAction && state.lastDiscard) {
-    const tile = state.lastDiscard;
-    const player = state.players[playerIndex];
-    const isScoring =
-      tile.suit === 'dragons' ||
-      (tile.suit === 'winds' && (tile.value === player.seat || tile.value === state.prevailingWind));
-    if (isScoring) {
-      return { action: claimKongAction, reasoning: `Kong scoring tile: ${tile.name}` };
-    }
+  if (claimKongAction) {
+    return { action: claimKongAction, reasoning: 'Claim kong' };
   }
 
-  // 5. Discard logic — find the best tile to discard
+  // 4. Claim pong — always good (completes a meld)
+  const pongAction = validActions.find(a => a.type === 'claimPong');
+  if (pongAction && shouldClaimMeld(state, playerIndex, 'pong')) {
+    return { action: pongAction, reasoning: `Pong ${state.lastDiscard?.name}` };
+  }
+
+  // 5. Claim chow — good when building toward a win
+  const chowActions = validActions.filter(a => a.type === 'claimChow') as
+    Array<{ type: 'claimChow'; chowTiles: [Tile, Tile] }>;
+  if (chowActions.length > 0 && shouldClaimMeld(state, playerIndex, 'chow')) {
+    // Pick the chow that keeps the most useful tiles
+    const player = state.players[playerIndex];
+    const counts = countHand(player.handTiles);
+    let bestChow = chowActions[0];
+    let bestScore = -Infinity;
+
+    for (const chow of chowActions) {
+      // Score: usefulness of the tiles we'd keep after claiming
+      const usedKeys = new Set(chow.chowTiles.map(t => t.id));
+      let score = 0;
+      for (const t of player.handTiles) {
+        if (!usedKeys.has(t.id)) {
+          score += tileUsefulness(t, counts, player.seat, state.prevailingWind);
+        }
+      }
+      if (score > bestScore) {
+        bestScore = score;
+        bestChow = chow;
+      }
+    }
+    return { action: bestChow, reasoning: `Chow with ${bestChow.chowTiles.map(t => t.name).join(' + ')}` };
+  }
+
+  // 6. Discard logic — smart tile selection
   const discardActions = validActions.filter(a => a.type === 'discard') as
     Array<{ type: 'discard'; tile: Tile }>;
 
   if (discardActions.length > 0) {
-    const player = state.players[playerIndex];
-    const bestDiscard = pickBestDiscard(state, player, discardActions);
-    return bestDiscard;
+    return pickBestDiscard(state, playerIndex, discardActions);
   }
 
-  // 6. Pass on anything else
+  // 7. Pass on anything else
   const passAction = validActions.find(a => a.type === 'pass');
   if (passAction) {
     return { action: passAction, reasoning: 'No advantageous claim' };
   }
 
-  // Shouldn't reach here, but return first action as safety
   return { action: validActions[0], reasoning: 'Default action' };
 }
 
 /**
- * Pick the best tile to discard using a simple heuristic.
- * Prefer: isolated tiles > terminals/honors without pairs > tiles others discarded
+ * Pick the best tile to discard.
+ * Keeps tiles that form groups (pairs, triplets, sequences).
+ * Discards isolated tiles, preferring safe ones (already discarded by others).
  */
 function pickBestDiscard(
   state: GameState,
-  player: { handTiles: Tile[]; seat: Wind },
+  playerIndex: number,
   discardActions: Array<{ type: 'discard'; tile: Tile }>,
 ): AIDecision {
-  // Build discard safety map (tiles already discarded are safer to discard)
-  const allDiscards = new Set<string>();
+  const player = state.players[playerIndex];
+  const counts = countHand(player.handTiles);
+
+  // Build discard safety map (tiles others discarded are safer)
+  const allDiscards = new Map<string, number>();
   for (const p of state.players) {
     for (const t of p.discards) {
-      allDiscards.add(tileKey(t));
+      const k = tileKey(t);
+      allDiscards.set(k, (allDiscards.get(k) || 0) + 1);
     }
   }
 
-  // Count tiles by key in hand for isolation scoring
-  const handCounts = new Map<string, number>();
-  for (const t of player.handTiles) {
-    const k = tileKey(t);
-    handCounts.set(k, (handCounts.get(k) || 0) + 1);
-  }
-
-  // Score each discard option (lower = better to discard)
+  // Score each tile: higher = more useful to keep (= worse to discard)
   const scored = discardActions.map(action => {
     const tile = action.tile;
     const key = tileKey(tile);
-    let score = 0;
 
-    const count = handCounts.get(key) || 0;
+    let keepScore = tileUsefulness(tile, counts, player.seat, state.prevailingWind);
 
-    // Pairs are more valuable, keep them
-    if (count >= 2) score += 20;
-    // Triplets are very valuable
-    if (count >= 3) score += 40;
+    // Safety bonus: tiles already seen are safer to discard
+    const discardCount = allDiscards.get(key) || 0;
+    if (discardCount > 0) keepScore -= 6 * discardCount;
 
-    // Scoring tiles are valuable — dragons, seat/prevailing wind
-    if (tile.suit === 'dragons') score += 15;
-    if (tile.suit === 'winds' && tile.value === player.seat) score += 15;
-    if (tile.suit === 'winds' && tile.value === state.prevailingWind) score += 15;
+    // Terminals are slightly less flexible
+    if (tile.isTerminal) keepScore -= 2;
 
-    // Connected tiles (part of potential chow) are valuable
-    if (tile.suit === 'bamboo' || tile.suit === 'dots' || tile.suit === 'characters') {
-      const val = tile.value as number;
-      const suit = tile.suit;
-      for (const offset of [-2, -1, 1, 2]) {
-        const neighbor = `${suit}_${val + offset}`;
-        if (handCounts.has(neighbor)) score += 5;
-      }
+    // Isolated honor tiles without a pair are low value
+    if (tile.isHonor && (counts.get(key) || 0) === 1) {
+      const isScoringHonor =
+        tile.suit === 'dragons' ||
+        (tile.suit === 'winds' && (tile.value === player.seat || tile.value === state.prevailingWind));
+      if (!isScoringHonor) keepScore -= 8;
     }
 
-    // Tiles already discarded by others are safer to discard
-    if (allDiscards.has(key)) score -= 3;
-
-    // Isolated honor tiles without a pair are less useful
-    if (tile.isHonor && count === 1) score -= 5;
-
-    // Terminal tiles are less flexible than middle tiles
-    if (tile.isTerminal) score -= 2;
-
-    return { action, score };
+    return { action, keepScore };
   });
 
-  // Sort ascending — lowest score = best to discard
-  scored.sort((a, b) => a.score - b.score);
+  // Sort ascending by keepScore — lowest = best to discard
+  scored.sort((a, b) => a.keepScore - b.keepScore);
 
   const best = scored[0];
   return {
     action: best.action,
-    reasoning: `Discard ${best.action.tile.name} (score: ${best.score})`,
+    reasoning: `Discard ${best.action.tile.name} (keep=${best.keepScore})`,
   };
 }
