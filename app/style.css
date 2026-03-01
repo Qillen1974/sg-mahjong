@@ -194,10 +194,12 @@ html, body {
 .opponent-left,
 .opponent-right {
   flex-direction: column;
-  justify-content: center;
-  width: calc(var(--tile-width) * 1.8);
+  justify-content: flex-start;
+  align-items: center;
+  width: calc(var(--tile-width) * 2.2);
   flex-shrink: 0;
   overflow: hidden;
+  gap: 2px;
 }
 
 .opponent-left .melds-row,
@@ -238,6 +240,8 @@ html, body {
 .opponent-right .opponent-hand {
   flex-direction: column;
   align-items: center;
+  max-height: 60%;
+  overflow: hidden;
 }
 
 .tile-count {
@@ -515,52 +519,60 @@ html, body {
   opacity: 0.8;
 }
 
-/* Speech bubbles */
+/* Bubble overlay — persistent layer on top of game board */
+.bubble-overlay {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 100;
+}
+
 .speech-bubble {
-  position: relative;
-  display: inline-block;
+  position: absolute;
   background: white;
   color: #1a1a1a;
-  padding: 4px 10px;
-  border-radius: 12px;
-  font-size: 14px;
+  padding: 6px 14px;
+  border-radius: 14px;
+  font-size: 15px;
   font-weight: 700;
   white-space: nowrap;
   box-shadow: 0 2px 8px rgba(0,0,0,0.3);
-  animation: bubble-in 0.2s ease-out;
-  z-index: 10;
+  animation: bubble-in 0.2s ease-out forwards;
 }
 
 @keyframes bubble-in {
-  from { transform: scale(0.5); opacity: 0; }
-  to { transform: scale(1); opacity: 1; }
+  from { transform: scale(0.5) translate(-50%, 0); opacity: 0; }
+  to { transform: scale(1) translate(-50%, 0); opacity: 1; }
 }
 
-/* Bubble positioning per side */
-.opponent-area {
-  position: relative;
-}
-
-.opponent-top .speech-bubble {
-  align-self: center;
-}
-
-.opponent-left .speech-bubble {
-  align-self: center;
-}
-
-.opponent-right .speech-bubble {
-  align-self: center;
-}
-
-.my-info {
-  position: relative;
-}
-
-.speech-bubble-above {
-  position: absolute;
-  bottom: 100%;
+/* Position bubbles near each player's area */
+.speech-bubble-top {
+  top: 12%;
   left: 50%;
   transform: translateX(-50%);
-  margin-bottom: 4px;
+}
+
+.speech-bubble-bottom {
+  bottom: 22%;
+  left: 50%;
+  transform: translateX(-50%);
+}
+
+.speech-bubble-left {
+  top: 45%;
+  left: 18%;
+  transform: translateX(-50%);
+}
+
+.speech-bubble-right {
+  top: 45%;
+  right: 4%;
+  left: auto;
+  transform: none;
+  animation: bubble-in-right 0.2s ease-out forwards;
+}
+
+@keyframes bubble-in-right {
+  from { transform: scale(0.5); opacity: 0; }
+  to { transform: scale(1); opacity: 1; }
 }

@@ -10,7 +10,6 @@ export interface OpponentAreaOptions {
   isDealer: boolean;
   name: string;
   avatar: string;
-  bubble?: string;
 }
 
 function windChar(w: Wind): string {
@@ -18,7 +17,7 @@ function windChar(w: Wind): string {
 }
 
 export function createOpponentArea(opts: OpponentAreaOptions): HTMLElement {
-  const { player, position, isDealer, name, avatar, bubble } = opts;
+  const { player, position, isDealer, name, avatar } = opts;
   const el = document.createElement('div');
   el.className = `opponent-area opponent-${position}`;
 
@@ -47,18 +46,6 @@ export function createOpponentArea(opts: OpponentAreaOptions): HTMLElement {
   info.appendChild(count);
 
   el.appendChild(info);
-
-  // Speech bubble
-  if (bubble) {
-    const bubbleEl = document.createElement('div');
-    const bubblePos =
-      position === 'top' ? 'speech-bubble-below' :
-      position === 'left' ? 'speech-bubble-right' :
-      'speech-bubble-left';
-    bubbleEl.className = `speech-bubble ${bubblePos}`;
-    bubbleEl.textContent = bubble;
-    el.appendChild(bubbleEl);
-  }
 
   // Concealed tiles (face-down)
   const hand = document.createElement('div');

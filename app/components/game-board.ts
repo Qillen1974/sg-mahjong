@@ -19,13 +19,12 @@ export interface GameBoardOptions {
   state: GameState;
   validActions: PlayerAction[];
   selectedTile: Tile | null;
-  bubbles: Map<number, string>;
   onTileClick: (tile: Tile) => void;
   onAction: (action: PlayerAction) => void;
 }
 
 export function createGameBoard(opts: GameBoardOptions): HTMLElement {
-  const { state, validActions, selectedTile, bubbles, onTileClick, onAction } = opts;
+  const { state, validActions, selectedTile, onTileClick, onAction } = opts;
   const el = document.createElement('div');
   el.className = 'game-board';
 
@@ -49,7 +48,6 @@ export function createGameBoard(opts: GameBoardOptions): HTMLElement {
     isDealer: state.dealerIndex === 2,
     name: PLAYER_CONFIG[2].name,
     avatar: PLAYER_CONFIG[2].avatar,
-    bubble: bubbles.get(2),
   });
   el.appendChild(topOpp);
 
@@ -63,7 +61,6 @@ export function createGameBoard(opts: GameBoardOptions): HTMLElement {
     isDealer: state.dealerIndex === 3,
     name: PLAYER_CONFIG[3].name,
     avatar: PLAYER_CONFIG[3].avatar,
-    bubble: bubbles.get(3),
   });
   midRow.appendChild(leftOpp);
 
@@ -76,7 +73,6 @@ export function createGameBoard(opts: GameBoardOptions): HTMLElement {
     isDealer: state.dealerIndex === 1,
     name: PLAYER_CONFIG[1].name,
     avatar: PLAYER_CONFIG[1].avatar,
-    bubble: bubbles.get(1),
   });
   midRow.appendChild(rightOpp);
 
@@ -93,7 +89,7 @@ export function createGameBoard(opts: GameBoardOptions): HTMLElement {
   }
   el.appendChild(myMelds);
 
-  // Human info row: avatar + wind + name + bubble
+  // Human info row: avatar + wind + name
   const myInfo = document.createElement('div');
   myInfo.className = 'my-info';
 
@@ -111,15 +107,6 @@ export function createGameBoard(opts: GameBoardOptions): HTMLElement {
   myName.className = 'player-name';
   myName.textContent = PLAYER_CONFIG[0].name;
   myInfo.appendChild(myName);
-
-  // Human speech bubble
-  const humanBubble = bubbles.get(0);
-  if (humanBubble) {
-    const bubble = document.createElement('span');
-    bubble.className = 'speech-bubble speech-bubble-above';
-    bubble.textContent = humanBubble;
-    myInfo.appendChild(bubble);
-  }
 
   el.appendChild(myInfo);
 

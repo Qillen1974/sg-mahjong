@@ -19,7 +19,13 @@ export function renderGameScreen(ctx: ScreenContext): HTMLElement {
   let chowOptions: [Tile, Tile][] | false = false;
   let showChowPicker = false;
   const bubbles = new Map<number, string>();
+  const bubbleTimers = new Map<number, ReturnType<typeof setTimeout>>();
   const isResume = !!ctx.screenData?.resumeBridge;
+
+  // Persistent bubble overlay — not destroyed by render()
+  const bubbleOverlay = document.createElement('div');
+  bubbleOverlay.className = 'bubble-overlay';
+  screen.appendChild(bubbleOverlay);
 
   // Session events
   bridge.subscribeSession((event) => {
@@ -35,19 +41,40 @@ export function renderGameScreen(ctx: ScreenContext): HTMLElement {
 
   // Wire up bubble callback
   bridge.onBubble = (playerIndex: number, text: string) => {
+    // Clear any existing timer for this player
+    const existing = bubbleTimers.get(playerIndex);
+    if (existing) clearTimeout(existing);
+
     bubbles.set(playerIndex, text);
-    render();
-    setTimeout(() => {
+    renderBubbles();
+
+    bubbleTimers.set(playerIndex, setTimeout(() => {
       bubbles.delete(playerIndex);
-      render();
-    }, 1500);
+      bubbleTimers.delete(playerIndex);
+      renderBubbles();
+    }, 1500));
   };
+
+  function renderBubbles() {
+    bubbleOverlay.innerHTML = '';
+    for (const [playerIndex, text] of bubbles) {
+      const el = document.createElement('div');
+      // Position class: player 0=bottom, 1=right, 2=top, 3=left
+      const pos = ['bottom', 'right', 'top', 'left'][playerIndex];
+      el.className = `speech-bubble speech-bubble-${pos}`;
+      el.textContent = text;
+      bubbleOverlay.appendChild(el);
+    }
+  }
 
   function render() {
     const state = bridge.state;
     if (!state) return;
 
+    // Clear everything except the bubble overlay
+    const overlay = screen.querySelector('.bubble-overlay');
     screen.innerHTML = '';
+    if (overlay) screen.appendChild(overlay);
 
     // Auto-draw for human player when it's their draw phase
     if (state.phase === 'draw' && state.currentPlayerIndex === 0) {
@@ -85,7 +112,6 @@ export function renderGameScreen(ctx: ScreenContext): HTMLElement {
       state,
       validActions,
       selectedTile,
-      bubbles,
       onTileClick: handleTileClick,
       onAction: handleAction,
     });
