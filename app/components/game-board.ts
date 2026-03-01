@@ -19,21 +19,22 @@ export interface GameBoardOptions {
   state: GameState;
   validActions: PlayerAction[];
   selectedTile: Tile | null;
+  lastDrawnTileId?: string | null;
   onTileClick: (tile: Tile) => void;
   onAction: (action: PlayerAction) => void;
 }
 
 export function createGameBoard(opts: GameBoardOptions): HTMLElement {
-  const { state, validActions, selectedTile, onTileClick, onAction } = opts;
+  const { state, validActions, selectedTile, lastDrawnTileId, onTileClick, onAction } = opts;
   const el = document.createElement('div');
   el.className = 'game-board';
 
   const human = state.players[0];
   const canDiscard = validActions.some(a => a.type === 'discard');
 
-  // Info bar (top) — round info
+  // Info bar — grid-area: info
   const topInfo = document.createElement('div');
-  topInfo.className = 'board-info';
+  topInfo.className = 'board-info area-info';
   topInfo.innerHTML = `
     <span>Wind: ${state.prevailingWind[0].toUpperCase()}</span>
     <span>Turn: ${state.turnNumber}</span>
@@ -41,7 +42,7 @@ export function createGameBoard(opts: GameBoardOptions): HTMLElement {
   `;
   el.appendChild(topInfo);
 
-  // Top opponent (player 2)
+  // Top opponent (player 2) — grid-area: top
   const topOpp = createOpponentArea({
     player: state.players[2],
     position: 'top',
@@ -49,12 +50,10 @@ export function createGameBoard(opts: GameBoardOptions): HTMLElement {
     name: PLAYER_CONFIG[2].name,
     avatar: PLAYER_CONFIG[2].avatar,
   });
+  topOpp.classList.add('area-top');
   el.appendChild(topOpp);
 
-  // Middle row: left opponent + discard pool + right opponent
-  const midRow = document.createElement('div');
-  midRow.className = 'board-middle';
-
+  // Left opponent (player 3) — grid-area: left
   const leftOpp = createOpponentArea({
     player: state.players[3],
     position: 'left',
@@ -62,11 +61,15 @@ export function createGameBoard(opts: GameBoardOptions): HTMLElement {
     name: PLAYER_CONFIG[3].name,
     avatar: PLAYER_CONFIG[3].avatar,
   });
-  midRow.appendChild(leftOpp);
+  leftOpp.classList.add('area-left');
+  el.appendChild(leftOpp);
 
+  // Discard pool — grid-area: center
   const discards = createDiscardPool(state.players, state.lastDiscard);
-  midRow.appendChild(discards);
+  discards.classList.add('area-center');
+  el.appendChild(discards);
 
+  // Right opponent (player 1) — grid-area: right
   const rightOpp = createOpponentArea({
     player: state.players[1],
     position: 'right',
@@ -74,9 +77,12 @@ export function createGameBoard(opts: GameBoardOptions): HTMLElement {
     name: PLAYER_CONFIG[1].name,
     avatar: PLAYER_CONFIG[1].avatar,
   });
-  midRow.appendChild(rightOpp);
+  rightOpp.classList.add('area-right');
+  el.appendChild(rightOpp);
 
-  el.appendChild(midRow);
+  // Bottom area: human melds + info + hand — grid-area: bottom
+  const bottomArea = document.createElement('div');
+  bottomArea.className = 'area-bottom';
 
   // Human melds + bonus
   const myMelds = document.createElement('div');
@@ -87,7 +93,7 @@ export function createGameBoard(opts: GameBoardOptions): HTMLElement {
   if (human.bonusTiles.length > 0) {
     myMelds.appendChild(createBonusDisplay(human.bonusTiles));
   }
-  el.appendChild(myMelds);
+  bottomArea.appendChild(myMelds);
 
   // Human info row: avatar + wind + name
   const myInfo = document.createElement('div');
@@ -108,23 +114,27 @@ export function createGameBoard(opts: GameBoardOptions): HTMLElement {
   myName.textContent = PLAYER_CONFIG[0].name;
   myInfo.appendChild(myName);
 
-  el.appendChild(myInfo);
+  bottomArea.appendChild(myInfo);
 
-  // Human hand (bottom)
+  // Human hand
   const hand = createPlayerHand({
     tiles: human.handTiles,
     selectedTile,
     canDiscard,
     onTileClick,
+    lastDrawnTileId: lastDrawnTileId ?? undefined,
   });
-  el.appendChild(hand);
+  bottomArea.appendChild(hand);
 
-  // Action bar
+  el.appendChild(bottomArea);
+
+  // Action bar — grid-area: acts
   const actions = createActionBar({
     actions: validActions,
     selectedTile,
     onAction,
   });
+  actions.classList.add('area-actions');
   el.appendChild(actions);
 
   return el;

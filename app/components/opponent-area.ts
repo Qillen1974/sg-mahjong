@@ -50,11 +50,9 @@ export function createOpponentArea(opts: OpponentAreaOptions): HTMLElement {
   // Concealed tiles (face-down)
   const hand = document.createElement('div');
   hand.className = 'opponent-hand';
-  const isVertical = position === 'left' || position === 'right';
 
   for (let i = 0; i < player.handTiles.length; i++) {
     const back = createTileBack(true);
-    if (isVertical) back.classList.add('tile-rotated');
     hand.appendChild(back);
   }
   el.appendChild(hand);

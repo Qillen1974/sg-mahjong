@@ -32,6 +32,7 @@ export interface PlayerHandOptions {
   selectedTile: Tile | null;
   canDiscard: boolean;
   onTileClick: (tile: Tile) => void;
+  lastDrawnTileId?: string;
 }
 
 export function createPlayerHand(opts: PlayerHandOptions): HTMLElement {
@@ -39,9 +40,40 @@ export function createPlayerHand(opts: PlayerHandOptions): HTMLElement {
   el.className = 'player-hand';
 
   const sorted = sortTiles(opts.tiles);
-  for (const tile of sorted) {
+
+  // Separate drawn tile from the rest if specified
+  let mainTiles: Tile[];
+  let drawnTile: Tile | undefined;
+
+  if (opts.lastDrawnTileId) {
+    const idx = sorted.findIndex(t => t.id === opts.lastDrawnTileId);
+    if (idx !== -1) {
+      drawnTile = sorted[idx];
+      mainTiles = [...sorted.slice(0, idx), ...sorted.slice(idx + 1)];
+    } else {
+      mainTiles = sorted;
+    }
+  } else {
+    mainTiles = sorted;
+  }
+
+  for (const tile of mainTiles) {
     const isSelected = opts.selectedTile !== null && tile.id === opts.selectedTile.id;
     const tileEl = createTileView(tile, {
+      selectable: opts.canDiscard,
+      selected: isSelected,
+      onClick: opts.onTileClick,
+    });
+    el.appendChild(tileEl);
+  }
+
+  if (drawnTile) {
+    const gap = document.createElement('div');
+    gap.className = 'drawn-tile-gap';
+    el.appendChild(gap);
+
+    const isSelected = opts.selectedTile !== null && drawnTile.id === opts.selectedTile.id;
+    const tileEl = createTileView(drawnTile, {
       selectable: opts.canDiscard,
       selected: isSelected,
       onClick: opts.onTileClick,

@@ -147,20 +147,32 @@ html, body {
   border-radius: 8px;
 }
 
-/* Rotated tiles for side opponents */
-.tile-rotated {
-  transform: rotate(90deg);
-  margin: calc(var(--tile-width) * 0.15) 0;
-}
-
-/* Game board layout */
+/* Game board layout — square CSS Grid */
 .game-board {
-  display: flex;
-  flex-direction: column;
-  height: 100%;
+  display: grid;
+  grid-template-areas:
+    "info   info   info"
+    ".      top    ."
+    "left   center right"
+    ".      bottom ."
+    "acts   acts   acts";
+  grid-template-columns: 1fr 2fr 1fr;
+  grid-template-rows: auto auto 1fr auto auto;
+  aspect-ratio: 1;
+  max-height: 100%;
+  max-width: 100dvh;
+  margin: 0 auto;
   padding: 4px;
   gap: 2px;
 }
+
+.area-info   { grid-area: info; }
+.area-top    { grid-area: top; }
+.area-left   { grid-area: left; }
+.area-center { grid-area: center; }
+.area-right  { grid-area: right; }
+.area-bottom { grid-area: bottom; }
+.area-actions { grid-area: acts; }
 
 .board-info {
   display: flex;
@@ -171,49 +183,23 @@ html, body {
   opacity: 0.8;
 }
 
-.board-middle {
-  display: flex;
-  flex: 1;
-  min-height: 0;
-  gap: 4px;
-}
-
 /* Opponent areas */
 .opponent-area {
   display: flex;
+  flex-direction: column;
   align-items: center;
   gap: 4px;
+  overflow: hidden;
 }
 
 .opponent-top {
-  flex-direction: column;
   justify-content: center;
   padding: 0 8px;
 }
 
 .opponent-left,
 .opponent-right {
-  flex-direction: column;
   justify-content: flex-start;
-  align-items: center;
-  width: calc(var(--tile-width) * 2.2);
-  flex-shrink: 0;
-  overflow: hidden;
-  gap: 2px;
-}
-
-.opponent-left .melds-row,
-.opponent-right .melds-row,
-.opponent-left .bonus-tiles,
-.opponent-right .bonus-tiles {
-  flex-direction: column;
-  align-items: center;
-}
-
-.opponent-left .meld-group,
-.opponent-right .meld-group {
-  flex-direction: column;
-  align-items: center;
 }
 
 .opponent-info {
@@ -223,25 +209,11 @@ html, body {
   font-size: 11px;
 }
 
-.opponent-left .opponent-info,
-.opponent-right .opponent-info {
-  flex-direction: column;
-  gap: 2px;
-}
-
 .opponent-hand {
   display: flex;
   flex-wrap: wrap;
   gap: 1px;
   justify-content: center;
-}
-
-.opponent-left .opponent-hand,
-.opponent-right .opponent-hand {
-  flex-direction: column;
-  align-items: center;
-  max-height: 60%;
-  overflow: hidden;
 }
 
 .tile-count {
@@ -328,6 +300,11 @@ html, body {
   justify-content: center;
   padding: 4px 8px;
   flex-wrap: wrap;
+}
+
+.drawn-tile-gap {
+  width: 8px;
+  flex-shrink: 0;
 }
 
 /* Waiting label */

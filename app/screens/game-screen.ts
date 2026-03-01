@@ -16,6 +16,7 @@ export function renderGameScreen(ctx: ScreenContext): HTMLElement {
   // Reuse bridge across rounds within same session
   const bridge: GameBridge = ctx.screenData?.resumeBridge ?? new GameBridge(sessionConfig);
   let selectedTile: Tile | null = null;
+  let lastDrawnTileId: string | null = null;
   let chowOptions: [Tile, Tile][] | false = false;
   let showChowPicker = false;
   const bubbles = new Map<number, string>();
@@ -54,6 +55,13 @@ export function renderGameScreen(ctx: ScreenContext): HTMLElement {
       renderBubbles();
     }, 1500));
   };
+
+  // Track drawn tile for visual gap
+  bridge.subscribeGame((event) => {
+    if (event.type === 'tileDrawn' && event.playerIndex === 0) {
+      lastDrawnTileId = event.tile.id;
+    }
+  });
 
   function renderBubbles() {
     bubbleOverlay.innerHTML = '';
@@ -112,6 +120,7 @@ export function renderGameScreen(ctx: ScreenContext): HTMLElement {
       state,
       validActions,
       selectedTile,
+      lastDrawnTileId,
       onTileClick: handleTileClick,
       onAction: handleAction,
     });
@@ -131,6 +140,7 @@ export function renderGameScreen(ctx: ScreenContext): HTMLElement {
     // Toggle selection
     if (selectedTile && selectedTile.id === tile.id) {
       // Double-tap to discard
+      lastDrawnTileId = null;
       bridge.discard(tile);
       selectedTile = null;
     } else {
@@ -141,6 +151,7 @@ export function renderGameScreen(ctx: ScreenContext): HTMLElement {
 
   async function handleAction(action: PlayerAction) {
     selectedTile = null;
+    lastDrawnTileId = null;
 
     switch (action.type) {
       case 'discard':
