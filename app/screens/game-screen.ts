@@ -76,20 +76,20 @@ export function renderGameScreen(ctx: ScreenContext): HTMLElement {
   }
 
   function render() {
-    const state = bridge.state;
+    let state = bridge.state;
     if (!state) return;
+
+    // Auto-draw for human player before clearing the screen (avoids double-render flash)
+    if (state.phase === 'draw' && state.currentPlayerIndex === 0) {
+      bridge.drawTileSync();
+      state = bridge.state;
+      if (!state) return;
+    }
 
     // Clear everything except the bubble overlay
     const overlay = screen.querySelector('.bubble-overlay');
     screen.innerHTML = '';
     if (overlay) screen.appendChild(overlay);
-
-    // Auto-draw for human player when it's their draw phase
-    if (state.phase === 'draw' && state.currentPlayerIndex === 0) {
-      bridge.drawTileSync();
-      render();
-      return;
-    }
 
     if (state.phase === 'roundOver') {
       // Session controller handles this via roundCompleted event
