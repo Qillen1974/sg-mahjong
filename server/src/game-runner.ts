@@ -88,11 +88,13 @@ export class GameRunner {
    * Handles the full game flow until roundOver.
    */
   async run(): Promise<void> {
+    console.log(`[GameRunner] Game loop started. Dealer=${this.state.dealerIndex}, Phase=${this.state.phase}`);
     // The game starts with dealer in postDraw phase (they already have 14 tiles)
     while (this.state.phase !== 'roundOver') {
       await this.processTurn();
     }
 
+    console.log('[GameRunner] Game loop ended — roundOver');
     // Game over — broadcast final state
     this.broadcastState();
   }
@@ -100,6 +102,7 @@ export class GameRunner {
   private async processTurn(): Promise<void> {
     const { phase, currentPlayerIndex } = this.state;
     const seatType = this.room.seats[currentPlayerIndex].type;
+    console.log(`[GameRunner] processTurn: phase=${phase}, player=${currentPlayerIndex}, seatType=${seatType}`);
 
     if (phase === 'draw') {
       // Draw phase — auto-draw for everyone (server-authoritative)
@@ -265,15 +268,25 @@ export class GameRunner {
       this._actionResolve = resolve;
       this._actionSeat = seatIndex;
 
-      this.turnTimer = setTimeout(() => {
-        // Auto-pass or auto-discard on timeout
-        const actions = getValidActions(this.state, seatIndex);
-        const passAction = actions.find(a => a.type === 'pass');
-        const discardAction = actions.find(a => a.type === 'discard');
-        if (passAction) {
-          this.applyAction(seatIndex, passAction);
-        } else if (discardAction) {
-          this.applyAction(seatIndex, discardAction);
+      this.turnTimer = setTimeout(async () => {
+        console.log(`[GameRunner] Turn timeout for seat ${seatIndex} — auto-playing with AI`);
+        // Use AI decision as fallback when player doesn't respond
+        try {
+          const actions = getValidActions(this.state, seatIndex);
+          if (actions.length > 0) {
+            const decision = await getAIDecision(this.state, seatIndex, actions);
+            this.applyAction(seatIndex, decision.action);
+          }
+        } catch (err) {
+          // Fallback to simple auto-pass/discard if AI fails
+          const actions = getValidActions(this.state, seatIndex);
+          const passAction = actions.find(a => a.type === 'pass');
+          const discardAction = actions.find(a => a.type === 'discard');
+          if (passAction) {
+            this.applyAction(seatIndex, passAction);
+          } else if (discardAction) {
+            this.applyAction(seatIndex, discardAction);
+          }
         }
         resolve();
       }, TURN_TIMEOUT_MS);

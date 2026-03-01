@@ -419,19 +419,22 @@ export function renderGameScreen(ctx: ScreenContext): HTMLElement {
    * Runs every 2s. Stops when the game screen is left.
    */
   function startGamePolling(serverUrl: string, roomId: string, token: string) {
-    // Fetch room data once for player names
-    fetch(`${serverUrl}/api/rooms/${roomId}`, {})
-      .then(r => r.ok ? r.json() : null)
-      .then(data => {
-        if (data?.room?.seats) {
-          const mySeat = ctx.screenData.seatIndex ?? 0;
-          playerNames = data.room.seats.map((s: any, i: number) => {
-            if (i === mySeat) return s.playerName || 'You';
-            return s.playerName || (s.type === 'ai-standby' ? `AI ${i + 1}` : 'Player');
-          });
-        }
-      })
-      .catch(() => {});
+    // Fetch room data for player names (after startRoom has filled AI seats)
+    // Small delay to ensure startRoom has completed on server
+    setTimeout(() => {
+      fetch(`${serverUrl}/api/rooms/${roomId}`, {})
+        .then(r => r.ok ? r.json() : null)
+        .then(data => {
+          if (data?.room?.seats) {
+            const mySeat = ctx.screenData.seatIndex ?? 0;
+            playerNames = data.room.seats.map((s: any, i: number) => {
+              if (i === mySeat) return s.playerName || 'You';
+              return s.playerName || (s.type === 'ai-standby' ? `AI ${i + 1}` : 'Player');
+            });
+          }
+        })
+        .catch(() => {});
+    }, 500);
 
     async function poll() {
       try {
