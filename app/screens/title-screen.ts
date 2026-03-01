@@ -8,11 +8,16 @@ export function renderTitleScreen(ctx: ScreenContext): HTMLElement {
       <h1 class="title-logo">SG Mahjong</h1>
       <p class="title-sub">Singapore-style Mahjong</p>
       <button class="btn btn-primary btn-large" id="btn-new-game">New Game</button>
+      <button class="btn btn-accent btn-large" id="btn-online">Play Online</button>
     </div>
   `;
 
   screen.querySelector('#btn-new-game')!.addEventListener('click', () => {
     ctx.navigate('setup');
+  });
+
+  screen.querySelector('#btn-online')!.addEventListener('click', () => {
+    ctx.navigate('lobby');
   });
 
   return screen;

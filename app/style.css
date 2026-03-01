@@ -158,10 +158,8 @@ html, body {
     "acts   acts   acts";
   grid-template-columns: 1fr 2fr 1fr;
   grid-template-rows: auto auto 1fr auto auto;
-  aspect-ratio: 1;
-  max-height: 100%;
-  max-width: 100dvh;
-  margin: 0 auto;
+  height: 100%;
+  width: 100%;
   padding: 4px;
   gap: 2px;
 }
@@ -552,4 +550,162 @@ html, body {
 @keyframes bubble-in-right {
   from { transform: scale(0.5); opacity: 0; }
   to { transform: scale(1); opacity: 1; }
+}
+
+/* Title screen button stack */
+.title-content .btn + .btn {
+  margin-top: 8px;
+}
+
+/* Lobby screen */
+.lobby-screen {
+  align-items: center;
+  overflow-y: auto;
+}
+
+.lobby-content {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  padding: 20px;
+  max-width: 500px;
+  width: 100%;
+}
+
+.lobby-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.lobby-header h2 {
+  font-size: 24px;
+  color: var(--accent);
+}
+
+.lobby-create {
+  background: rgba(255,255,255,0.05);
+  border-radius: 8px;
+  padding: 16px;
+}
+
+.lobby-create h3 {
+  font-size: 16px;
+  margin-bottom: 12px;
+}
+
+.create-form {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.lobby-input {
+  flex: 1;
+  min-width: 120px;
+  padding: 8px 12px;
+  border-radius: 6px;
+  border: 1px solid rgba(255,255,255,0.2);
+  background: rgba(255,255,255,0.1);
+  color: var(--text-light);
+  font-size: 14px;
+}
+
+.lobby-input::placeholder {
+  color: rgba(255,255,255,0.4);
+}
+
+.lobby-rooms h3 {
+  font-size: 16px;
+  margin-bottom: 12px;
+}
+
+.room-count {
+  opacity: 0.5;
+  font-weight: 400;
+}
+
+.no-rooms {
+  text-align: center;
+  opacity: 0.5;
+  padding: 20px;
+}
+
+.room-card {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px 16px;
+  background: rgba(255,255,255,0.08);
+  border-radius: 8px;
+  margin-bottom: 8px;
+}
+
+.room-info {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.room-name {
+  font-weight: 600;
+  font-size: 15px;
+}
+
+.room-seats {
+  display: flex;
+  gap: 6px;
+  font-size: 18px;
+}
+
+.seat-empty {
+  opacity: 0.3;
+}
+
+.seat-ai {
+  opacity: 0.6;
+}
+
+.room-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.room-status {
+  font-size: 12px;
+  opacity: 0.5;
+  text-transform: uppercase;
+}
+
+.btn-small {
+  font-size: 12px;
+  padding: 4px 12px;
+}
+
+/* Waiting room (host view before game starts) */
+.waiting-room {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+  height: 100%;
+  padding: 20px;
+  text-align: center;
+}
+
+.waiting-room h2 {
+  font-size: 24px;
+  color: var(--accent);
+}
+
+.waiting-room p {
+  opacity: 0.7;
+}
+
+.waiting-room strong {
+  color: var(--accent);
+  font-family: monospace;
+  font-size: 14px;
 }

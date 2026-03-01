@@ -5,3 +5,4 @@ dist-app/
 .playwright-mcp/
 .env
 app/.env
+*.png

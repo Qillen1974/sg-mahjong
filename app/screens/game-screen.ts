@@ -3,18 +3,33 @@ import type { GameState, PlayerAction, SessionConfig, GameResult } from '@lib/ga
 import type { Tile } from '@lib/tiles';
 import { canChow } from '@lib/game';
 import { GameBridge } from '../state/game-bridge';
+import { NetworkBridge } from '../state/network-bridge';
 import { createGameBoard } from '../components/game-board';
 
 export function renderGameScreen(ctx: ScreenContext): HTMLElement {
   const screen = document.createElement('div');
   screen.className = 'screen game-screen';
 
+  const mode: 'local' | 'online' = ctx.screenData?.mode ?? 'local';
+  const isOnline = mode === 'online';
+
   const sessionConfig: Partial<SessionConfig> = ctx.screenData?.sessionConfig ?? {
     playerTypes: ['human', 'ai', 'ai', 'ai'],
   };
 
-  // Reuse bridge across rounds within same session
-  const bridge: GameBridge = ctx.screenData?.resumeBridge ?? new GameBridge(sessionConfig);
+  // Bridge — either local GameBridge or network NetworkBridge
+  let bridge: GameBridge;
+  let networkBridge: NetworkBridge | null = null;
+
+  if (isOnline) {
+    const { serverUrl, roomId, token, seatIndex } = ctx.screenData;
+    networkBridge = new NetworkBridge(serverUrl, roomId, token, seatIndex);
+    // GameBridge is still created for type compat but won't be used in online mode
+    bridge = null as any;
+  } else {
+    bridge = ctx.screenData?.resumeBridge ?? new GameBridge(sessionConfig);
+  }
+
   let selectedTile: Tile | null = null;
   let lastDrawnTileId: string | null = null;
   let chowOptions: [Tile, Tile][] | false = false;
@@ -28,40 +43,40 @@ export function renderGameScreen(ctx: ScreenContext): HTMLElement {
   bubbleOverlay.className = 'bubble-overlay';
   screen.appendChild(bubbleOverlay);
 
-  // Session events
-  bridge.subscribeSession((event) => {
-    if (event.type === 'roundCompleted') {
-      ctx.navigate('result', {
-        sessionConfig,
-        record: event.record,
-        session: bridge.sessionState,
-        bridge,
-      });
-    }
-  });
+  // Session events & bubble callback (local mode only — online mode uses NetworkBridge)
+  if (!isOnline) {
+    bridge.subscribeSession((event) => {
+      if (event.type === 'roundCompleted') {
+        ctx.navigate('result', {
+          sessionConfig,
+          record: event.record,
+          session: bridge.sessionState,
+          bridge,
+        });
+      }
+    });
 
-  // Wire up bubble callback
-  bridge.onBubble = (playerIndex: number, text: string) => {
-    // Clear any existing timer for this player
-    const existing = bubbleTimers.get(playerIndex);
-    if (existing) clearTimeout(existing);
+    bridge.onBubble = (playerIndex: number, text: string) => {
+      const existing = bubbleTimers.get(playerIndex);
+      if (existing) clearTimeout(existing);
 
-    bubbles.set(playerIndex, text);
-    renderBubbles();
-
-    bubbleTimers.set(playerIndex, setTimeout(() => {
-      bubbles.delete(playerIndex);
-      bubbleTimers.delete(playerIndex);
+      bubbles.set(playerIndex, text);
       renderBubbles();
-    }, 1500));
-  };
 
-  // Track drawn tile for visual gap
-  bridge.subscribeGame((event) => {
-    if (event.type === 'tileDrawn' && event.playerIndex === 0) {
-      lastDrawnTileId = event.tile.id;
-    }
-  });
+      bubbleTimers.set(playerIndex, setTimeout(() => {
+        bubbles.delete(playerIndex);
+        bubbleTimers.delete(playerIndex);
+        renderBubbles();
+      }, 1500));
+    };
+
+    // Track drawn tile for visual gap
+    bridge.subscribeGame((event) => {
+      if (event.type === 'tileDrawn' && event.playerIndex === 0) {
+        lastDrawnTileId = event.tile.id;
+      }
+    });
+  }
 
   function renderBubbles() {
     bubbleOverlay.innerHTML = '';
@@ -76,11 +91,16 @@ export function renderGameScreen(ctx: ScreenContext): HTMLElement {
   }
 
   function render() {
-    let state = bridge.state;
+    let state: any;
+    if (isOnline && networkBridge) {
+      state = networkBridge.state;
+    } else {
+      state = bridge.state;
+    }
     if (!state) return;
 
-    // Auto-draw for human player before clearing the screen (avoids double-render flash)
-    if (state.phase === 'draw' && state.currentPlayerIndex === 0) {
+    // Auto-draw for human player (local mode only — server handles draws in online mode)
+    if (!isOnline && state.phase === 'draw' && state.currentPlayerIndex === 0) {
       bridge.drawTileSync();
       state = bridge.state;
       if (!state) return;
@@ -101,12 +121,20 @@ export function renderGameScreen(ctx: ScreenContext): HTMLElement {
       return;
     }
 
-    const validActions = bridge.getValidActions();
+    const validActions = isOnline && networkBridge
+      ? networkBridge.getValidActions()
+      : bridge.getValidActions();
 
     // Check for chow options if in claim window
-    if (state.phase === 'claimWindow') {
+    if (state.phase === 'claimWindow' && !isOnline) {
       const chowResult = canChow(state, 0);
       chowOptions = chowResult || false;
+    } else if (state.phase === 'claimWindow' && isOnline) {
+      // In online mode, extract chow options from valid actions
+      const chowActions = validActions.filter((a: PlayerAction) => a.type === 'claimChow');
+      chowOptions = chowActions.length > 0
+        ? chowActions.map((a: any) => a.chowTiles as [Tile, Tile])
+        : false;
     } else {
       chowOptions = false;
       showChowPicker = false;
@@ -124,16 +152,19 @@ export function renderGameScreen(ctx: ScreenContext): HTMLElement {
       lastDrawnTileId,
       onTileClick: handleTileClick,
       onAction: handleAction,
+      mySeat: isOnline && networkBridge ? networkBridge.mySeat : 0,
     });
 
     screen.appendChild(board);
   }
 
   function handleTileClick(tile: Tile) {
-    const state = bridge.state;
+    const state = isOnline && networkBridge ? networkBridge.state : bridge.state;
     if (!state) return;
 
-    const validActions = bridge.getValidActions();
+    const validActions = isOnline && networkBridge
+      ? networkBridge.getValidActions()
+      : bridge.getValidActions();
     const canDiscard = validActions.some(a => a.type === 'discard');
 
     if (!canDiscard) return;
@@ -142,7 +173,8 @@ export function renderGameScreen(ctx: ScreenContext): HTMLElement {
     if (selectedTile && selectedTile.id === tile.id) {
       // Double-tap to discard
       lastDrawnTileId = null;
-      bridge.discard(tile);
+      const b = isOnline && networkBridge ? networkBridge : bridge;
+      b.discard(tile);
       selectedTile = null;
     } else {
       selectedTile = tile;
@@ -153,13 +185,14 @@ export function renderGameScreen(ctx: ScreenContext): HTMLElement {
   async function handleAction(action: PlayerAction) {
     selectedTile = null;
     lastDrawnTileId = null;
+    const b = isOnline && networkBridge ? networkBridge : bridge;
 
     switch (action.type) {
       case 'discard':
-        await bridge.discard(action.tile);
+        await b.discard(action.tile);
         break;
       case 'claimPong':
-        await bridge.claimPong();
+        await b.claimPong();
         break;
       case 'claimChow':
         // Show chow picker if multiple options
@@ -169,26 +202,26 @@ export function renderGameScreen(ctx: ScreenContext): HTMLElement {
           return;
         }
         if (chowOptions && chowOptions.length === 1) {
-          await bridge.claimChow(chowOptions[0]);
+          await b.claimChow(chowOptions[0]);
         }
         break;
       case 'claimKong':
-        await bridge.claimKong();
+        await b.claimKong();
         break;
       case 'claimWin':
-        await bridge.claimWin();
+        await b.claimWin();
         break;
       case 'pass':
-        await bridge.pass();
+        await b.pass();
         break;
       case 'declareSelfWin':
-        await bridge.declareSelfWin();
+        await b.declareSelfWin();
         break;
       case 'declareKong':
-        await bridge.declareKong(action.tiles);
+        await b.declareKong(action.tiles);
         break;
       case 'promotePungToKong':
-        await bridge.promotePungToKong(action.tile);
+        await b.promotePungToKong(action.tile);
         break;
     }
   }
@@ -204,7 +237,8 @@ export function renderGameScreen(ctx: ScreenContext): HTMLElement {
       optBtn.textContent = `${pair[0].name} + ${pair[1].name}`;
       optBtn.addEventListener('click', async () => {
         showChowPicker = false;
-        await bridge.claimChow(pair);
+        const b = isOnline && networkBridge ? networkBridge : bridge;
+        await b.claimChow(pair);
       });
       picker.appendChild(optBtn);
     }
@@ -221,12 +255,77 @@ export function renderGameScreen(ctx: ScreenContext): HTMLElement {
     return picker;
   }
 
-  // Subscribe to updates
-  bridge.onUpdate = () => render();
+  if (isOnline && networkBridge) {
+    // Online mode — wire up NetworkBridge
+    networkBridge.onUpdate = () => render();
+    networkBridge.onBubble = (playerIndex: number, text: string) => {
+      const existing = bubbleTimers.get(playerIndex);
+      if (existing) clearTimeout(existing);
+      bubbles.set(playerIndex, text);
+      renderBubbles();
+      bubbleTimers.set(playerIndex, setTimeout(() => {
+        bubbles.delete(playerIndex);
+        bubbleTimers.delete(playerIndex);
+        renderBubbles();
+      }, 1500));
+    };
 
-  // Start round (new game or next round in existing session)
-  bridge.startRound();
-  bridge.advanceAnimated();
+    // Connect to server
+    networkBridge.connect().then(() => {
+      // Show waiting room for all players until game starts
+      if (!networkBridge!.state) {
+        showWaitingRoom();
+      }
+    }).catch(err => {
+      console.error('Connection failed:', err);
+      ctx.navigate('lobby');
+    });
+  } else {
+    // Local mode — wire up GameBridge
+    bridge.onUpdate = () => render();
+    bridge.startRound();
+    bridge.advanceAnimated();
+  }
+
+  /** Show waiting room until game starts. Host gets a Start button. */
+  function showWaitingRoom() {
+    screen.innerHTML = '';
+    const waiting = document.createElement('div');
+    waiting.className = 'waiting-room';
+    const isHost = ctx.screenData.isHost;
+    waiting.innerHTML = `
+      <h2>Waiting for ${isHost ? 'Players' : 'Host to Start'}</h2>
+      <p>${isHost ? 'Share the room link to invite others.' : 'The host will start the game soon.'}</p>
+      <p>Room ID: <strong>${ctx.screenData.roomId}</strong></p>
+      ${isHost ? '<button class="btn btn-primary btn-large" id="btn-start-game">Start Game</button>' : ''}
+      <button class="btn btn-secondary" id="btn-leave">Leave</button>
+    `;
+    screen.appendChild(waiting);
+
+    waiting.querySelector('#btn-start-game')?.addEventListener('click', async () => {
+      try {
+        const res = await fetch(`${ctx.screenData.serverUrl}/api/rooms/${ctx.screenData.roomId}/start`, {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${ctx.screenData.token}`,
+            'Content-Type': 'application/json',
+          },
+        });
+        if (!res.ok) {
+          const err = await res.json();
+          alert(err.error || 'Failed to start');
+        }
+        // Game will start via WebSocket state push
+      } catch (e) {
+        alert('Failed to start game');
+      }
+    });
+
+    waiting.querySelector('#btn-leave')!.addEventListener('click', () => {
+      networkBridge?.disconnect();
+      ctx.navigate('lobby');
+    });
+  }
 
   return screen;
 }

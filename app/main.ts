@@ -1,6 +1,6 @@
 import { renderTitleScreen } from './screens/title-screen';
 
-export type Screen = 'title' | 'setup' | 'game' | 'result';
+export type Screen = 'title' | 'setup' | 'game' | 'result' | 'lobby';
 
 export interface ScreenContext {
   navigate: (screen: Screen, data?: any) => void;
@@ -33,6 +33,12 @@ function navigate(screen: Screen, data?: any) {
       import('./screens/result-screen').then(m => {
         app.innerHTML = '';
         app.appendChild(m.renderResultScreen(ctx));
+      });
+      break;
+    case 'lobby':
+      import('./screens/lobby-screen').then(m => {
+        app.innerHTML = '';
+        app.appendChild(m.renderLobbyScreen(ctx));
       });
       break;
   }

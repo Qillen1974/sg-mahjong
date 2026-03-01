@@ -40,9 +40,10 @@ export function createOpponentArea(opts: OpponentAreaOptions): HTMLElement {
   nameEl.textContent = name;
   info.appendChild(nameEl);
 
+  const tileCount = (player as any).handTileCount ?? player.handTiles?.length ?? 0;
   const count = document.createElement('span');
   count.className = 'tile-count';
-  count.textContent = `${player.handTiles.length}`;
+  count.textContent = `${tileCount}`;
   info.appendChild(count);
 
   el.appendChild(info);
@@ -51,7 +52,7 @@ export function createOpponentArea(opts: OpponentAreaOptions): HTMLElement {
   const hand = document.createElement('div');
   hand.className = 'opponent-hand';
 
-  for (let i = 0; i < player.handTiles.length; i++) {
+  for (let i = 0; i < tileCount; i++) {
     const back = createTileBack(true);
     hand.appendChild(back);
   }

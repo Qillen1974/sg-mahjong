@@ -22,44 +22,54 @@ export interface GameBoardOptions {
   lastDrawnTileId?: string | null;
   onTileClick: (tile: Tile) => void;
   onAction: (action: PlayerAction) => void;
+  /** Which seat index is "you" (bottom of the board). Defaults to 0. */
+  mySeat?: number;
 }
 
 export function createGameBoard(opts: GameBoardOptions): HTMLElement {
   const { state, validActions, selectedTile, lastDrawnTileId, onTileClick, onAction } = opts;
+  const mySeat = opts.mySeat ?? 0;
   const el = document.createElement('div');
   el.className = 'game-board';
 
-  const human = state.players[0];
+  // Seat mapping: bottom=me, right=+1, top=+2, left=+3
+  const bottomIdx = mySeat;
+  const rightIdx = (mySeat + 1) % 4;
+  const topIdx = (mySeat + 2) % 4;
+  const leftIdx = (mySeat + 3) % 4;
+
+  const human = state.players[bottomIdx];
   const canDiscard = validActions.some(a => a.type === 'discard');
 
   // Info bar — grid-area: info
   const topInfo = document.createElement('div');
   topInfo.className = 'board-info area-info';
+  const wallCount = (state as any).wallCount ?? state.wall?.length ?? 0;
   topInfo.innerHTML = `
     <span>Wind: ${state.prevailingWind[0].toUpperCase()}</span>
     <span>Turn: ${state.turnNumber}</span>
-    <span>Wall: ${state.wall.length}</span>
+    <span>Wall: ${wallCount}</span>
   `;
   el.appendChild(topInfo);
 
-  // Top opponent (player 2) — grid-area: top
+  // Top opponent — grid-area: top
   const topOpp = createOpponentArea({
-    player: state.players[2],
+    player: state.players[topIdx],
     position: 'top',
-    isDealer: state.dealerIndex === 2,
-    name: PLAYER_CONFIG[2].name,
-    avatar: PLAYER_CONFIG[2].avatar,
+    isDealer: state.dealerIndex === topIdx,
+    name: PLAYER_CONFIG[topIdx].name,
+    avatar: PLAYER_CONFIG[topIdx].avatar,
   });
   topOpp.classList.add('area-top');
   el.appendChild(topOpp);
 
-  // Left opponent (player 3) — grid-area: left
+  // Left opponent — grid-area: left
   const leftOpp = createOpponentArea({
-    player: state.players[3],
+    player: state.players[leftIdx],
     position: 'left',
-    isDealer: state.dealerIndex === 3,
-    name: PLAYER_CONFIG[3].name,
-    avatar: PLAYER_CONFIG[3].avatar,
+    isDealer: state.dealerIndex === leftIdx,
+    name: PLAYER_CONFIG[leftIdx].name,
+    avatar: PLAYER_CONFIG[leftIdx].avatar,
   });
   leftOpp.classList.add('area-left');
   el.appendChild(leftOpp);
@@ -69,13 +79,13 @@ export function createGameBoard(opts: GameBoardOptions): HTMLElement {
   discards.classList.add('area-center');
   el.appendChild(discards);
 
-  // Right opponent (player 1) — grid-area: right
+  // Right opponent — grid-area: right
   const rightOpp = createOpponentArea({
-    player: state.players[1],
+    player: state.players[rightIdx],
     position: 'right',
-    isDealer: state.dealerIndex === 1,
-    name: PLAYER_CONFIG[1].name,
-    avatar: PLAYER_CONFIG[1].avatar,
+    isDealer: state.dealerIndex === rightIdx,
+    name: PLAYER_CONFIG[rightIdx].name,
+    avatar: PLAYER_CONFIG[rightIdx].avatar,
   });
   rightOpp.classList.add('area-right');
   el.appendChild(rightOpp);
@@ -101,24 +111,25 @@ export function createGameBoard(opts: GameBoardOptions): HTMLElement {
 
   const myAvatar = document.createElement('span');
   myAvatar.className = 'avatar';
-  myAvatar.textContent = PLAYER_CONFIG[0].avatar;
+  myAvatar.textContent = PLAYER_CONFIG[bottomIdx].avatar;
   myInfo.appendChild(myAvatar);
 
   const myWind = document.createElement('span');
-  myWind.className = `wind-label${state.dealerIndex === 0 ? ' dealer' : ''}`;
+  myWind.className = `wind-label${state.dealerIndex === bottomIdx ? ' dealer' : ''}`;
   myWind.textContent = human.seat[0].toUpperCase();
   myInfo.appendChild(myWind);
 
   const myName = document.createElement('span');
   myName.className = 'player-name';
-  myName.textContent = PLAYER_CONFIG[0].name;
+  myName.textContent = PLAYER_CONFIG[bottomIdx].name;
   myInfo.appendChild(myName);
 
   bottomArea.appendChild(myInfo);
 
   // Human hand
+  const handTiles = human.handTiles ?? (human as any).handTilesList ?? [];
   const hand = createPlayerHand({
-    tiles: human.handTiles,
+    tiles: handTiles,
     selectedTile,
     canDiscard,
     onTileClick,
