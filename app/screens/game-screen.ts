@@ -273,15 +273,29 @@ export function renderGameScreen(ctx: ScreenContext): HTMLElement {
       }, 1500));
     };
 
+    // Show waiting room immediately while connecting
+    showWaitingRoom();
+
     // Connect to server
-    networkBridge.connect().then(() => {
-      // Show waiting room for all players until game starts
-      if (!networkBridge!.state) {
-        showWaitingRoom();
-      }
-    }).catch(err => {
+    networkBridge.connect().catch(err => {
       console.error('Connection failed:', err);
-      ctx.navigate('lobby');
+      screen.innerHTML = '';
+      const errDiv = document.createElement('div');
+      errDiv.className = 'waiting-room';
+      errDiv.innerHTML = `
+        <h2>Connection Failed</h2>
+        <p>${err.message || 'Could not connect to game server.'}</p>
+        <button class="btn btn-primary" id="btn-retry">Retry</button>
+        <button class="btn btn-secondary" id="btn-back-lobby">Back to Lobby</button>
+      `;
+      screen.appendChild(errDiv);
+      errDiv.querySelector('#btn-retry')?.addEventListener('click', () => {
+        showWaitingRoom();
+        networkBridge!.connect().catch(() => ctx.navigate('lobby'));
+      });
+      errDiv.querySelector('#btn-back-lobby')?.addEventListener('click', () => {
+        ctx.navigate('lobby');
+      });
     });
   } else {
     // Local mode — wire up GameBridge
