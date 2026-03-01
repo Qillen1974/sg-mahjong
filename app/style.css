@@ -709,3 +709,33 @@ html, body {
   font-family: monospace;
   font-size: 14px;
 }
+
+.room-id-display {
+  width: 100%;
+  max-width: 500px;
+  text-align: left;
+}
+
+.room-id-display label {
+  display: block;
+  font-size: 12px;
+  opacity: 0.6;
+  margin-bottom: 4px;
+}
+
+.copy-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: rgba(0,0,0,0.3);
+  border-radius: 6px;
+  padding: 8px 12px;
+}
+
+.copy-row code {
+  flex: 1;
+  font-size: 13px;
+  color: var(--accent);
+  word-break: break-all;
+  user-select: all;
+}
