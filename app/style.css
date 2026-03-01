@@ -739,3 +739,37 @@ html, body {
   word-break: break-all;
   user-select: all;
 }
+
+.seat-list {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  justify-content: center;
+  width: 100%;
+  max-width: 500px;
+}
+
+.seat-slot {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: rgba(0,0,0,0.3);
+  border-radius: 6px;
+  padding: 8px 14px;
+  font-size: 14px;
+  min-width: 120px;
+}
+
+.seat-slot.human {
+  border: 1px solid var(--accent);
+}
+
+.seat-slot.empty {
+  opacity: 0.5;
+}
+
+.seat-wind {
+  font-size: 11px;
+  opacity: 0.6;
+  min-width: 36px;
+}

@@ -294,9 +294,12 @@ export function renderGameScreen(ctx: ScreenContext): HTMLElement {
     waiting.className = 'waiting-room';
     const isHost = ctx.screenData.isHost;
     const roomId = ctx.screenData.roomId;
+    const serverUrl = ctx.screenData.serverUrl;
+    const token = ctx.screenData.token;
+
     waiting.innerHTML = `
-      <h2>Waiting for ${isHost ? 'Players' : 'Host to Start'}</h2>
-      <p>${isHost ? 'Tell your agents: "Join mahjong room" and give them the Room ID below.' : 'The host will start the game soon.'}</p>
+      <h2>Waiting Room</h2>
+      <p>${isHost ? 'Tell your agents: "Join mahjong room" and give them the Room ID below.' : 'Waiting for the host to start the game.'}</p>
       <div class="room-id-display">
         <label>Room ID</label>
         <div class="copy-row">
@@ -304,10 +307,38 @@ export function renderGameScreen(ctx: ScreenContext): HTMLElement {
           <button class="btn btn-secondary btn-small" id="btn-copy-id">Copy</button>
         </div>
       </div>
-      ${isHost ? '<button class="btn btn-primary btn-large" id="btn-start-game">Start Game</button>' : ''}
+      <div class="seat-list" id="seat-list"></div>
+      ${isHost ? '<button class="btn btn-primary btn-large" id="btn-start-game">Start Game (AI fills empty seats)</button>' : ''}
       <button class="btn btn-secondary" id="btn-leave">Leave</button>
     `;
     screen.appendChild(waiting);
+
+    // Poll room state to show who's joined
+    let waitingTimer: ReturnType<typeof setInterval> | null = null;
+
+    function updateSeats(seats: { type: string; playerName: string | null }[]) {
+      const seatList = waiting.querySelector('#seat-list');
+      if (!seatList) return;
+      seatList.innerHTML = seats.map((s, i) => {
+        const winds = ['East', 'South', 'West', 'North'];
+        const icon = s.type === 'human' ? '&#x1F464;' : s.type === 'ai-standby' ? '&#x1F916;' : '&#x25CB;';
+        const name = s.playerName || (s.type === 'empty' ? 'Empty' : 'AI');
+        return `<div class="seat-slot ${s.type}"><span class="seat-wind">${winds[i]}</span> ${icon} <span>${name}</span></div>`;
+      }).join('');
+    }
+
+    async function pollRoom() {
+      try {
+        const res = await fetch(`${serverUrl}/api/rooms/${roomId}`);
+        if (res.ok) {
+          const data = await res.json();
+          updateSeats(data.room.seats);
+        }
+      } catch { /* ignore */ }
+    }
+
+    pollRoom();
+    waitingTimer = setInterval(pollRoom, 2000);
 
     waiting.querySelector('#btn-copy-id')?.addEventListener('click', () => {
       navigator.clipboard.writeText(roomId).then(() => {
@@ -319,10 +350,10 @@ export function renderGameScreen(ctx: ScreenContext): HTMLElement {
 
     waiting.querySelector('#btn-start-game')?.addEventListener('click', async () => {
       try {
-        const res = await fetch(`${ctx.screenData.serverUrl}/api/rooms/${ctx.screenData.roomId}/start`, {
+        const res = await fetch(`${serverUrl}/api/rooms/${roomId}/start`, {
           method: 'POST',
           headers: {
-            'Authorization': `Bearer ${ctx.screenData.token}`,
+            'Authorization': `Bearer ${token}`,
             'Content-Type': 'application/json',
           },
         });
@@ -337,9 +368,20 @@ export function renderGameScreen(ctx: ScreenContext): HTMLElement {
     });
 
     waiting.querySelector('#btn-leave')!.addEventListener('click', () => {
+      if (waitingTimer) clearInterval(waitingTimer);
       networkBridge?.disconnect();
       ctx.navigate('lobby');
     });
+
+    // Clean up polling when game starts (render() will be called by onUpdate)
+    const origOnUpdate = networkBridge!.onUpdate;
+    networkBridge!.onUpdate = (state) => {
+      if (waitingTimer) {
+        clearInterval(waitingTimer);
+        waitingTimer = null;
+      }
+      origOnUpdate(state);
+    };
   }
 
   return screen;
