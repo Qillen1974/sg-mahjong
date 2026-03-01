@@ -86,8 +86,9 @@ export function renderGameScreen(ctx: ScreenContext): HTMLElement {
 
     // Auto-draw for human player when it's their draw phase
     if (state.phase === 'draw' && state.currentPlayerIndex === 0) {
-      bridge.drawTile();
-      return; // render() will be called again after draw + advance
+      bridge.drawTileSync();
+      render();
+      return;
     }
 
     if (state.phase === 'roundOver') {

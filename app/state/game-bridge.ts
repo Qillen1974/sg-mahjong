@@ -63,6 +63,7 @@ export class GameBridge {
       }
     } catch (e) {
       console.error('advanceGame error:', e);
+      this.notifyUpdate(); // re-render so board isn't left blank
     }
     this.advancing = false;
   }
@@ -197,6 +198,12 @@ export class GameBridge {
     if (!this.game) return;
     this.game.drawTile();
     await this.advanceAnimated();
+  }
+
+  /** Draw tile synchronously without triggering advance loop. */
+  drawTileSync() {
+    if (!this.game) return;
+    this.game.drawTile();
   }
 
   subscribeSession(listener: (event: SessionEvent) => void): () => void {
