@@ -147,7 +147,19 @@ export class NetworkBridge {
 
   private sendAction(action: PlayerAction): void {
     this.validActions = []; // Clear until next turnNotify
-    this.send({ type: 'action', action });
+    if (this.ws?.readyState === WebSocket.OPEN) {
+      this.send({ type: 'action', action });
+    } else {
+      // Fallback: send action via HTTP
+      fetch(`${this.serverUrl}/api/rooms/${this.roomId}/action`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${this.token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ action }),
+      }).catch(err => console.error('HTTP action failed:', err));
+    }
   }
 
   async discard(tile: Tile): Promise<void> {

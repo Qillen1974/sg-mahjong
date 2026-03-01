@@ -385,9 +385,9 @@ export function renderGameScreen(ctx: ScreenContext): HTMLElement {
           alert(err.error || 'Failed to start');
           return;
         }
-        // Game started — fetch state via HTTP as fallback (in case WS isn't connected)
+        // Game started — start HTTP polling for state + actions
         if (waitingTimer) { clearInterval(waitingTimer); waitingTimer = null; }
-        await pollForGameState(serverUrl, roomId, token);
+        startGamePolling(serverUrl, roomId, token);
       } catch (e) {
         alert('Failed to start game');
       }
@@ -410,26 +410,65 @@ export function renderGameScreen(ctx: ScreenContext): HTMLElement {
     };
   }
 
-  /** Poll server for game state via HTTP — fallback when WS isn't delivering updates. */
-  async function pollForGameState(serverUrl: string, roomId: string, token: string) {
-    for (let i = 0; i < 10; i++) {
+  /** HTTP polling timer for game state — fallback when WS isn't working. */
+  let gamePoller: ReturnType<typeof setInterval> | null = null;
+
+  /**
+   * Start continuous HTTP polling for game state + valid actions.
+   * Uses agent-friendly format which includes validActions.
+   * Runs every 2s. Stops when the game screen is left.
+   */
+  function startGamePolling(serverUrl: string, roomId: string, token: string) {
+    // Fetch room data once for player names
+    fetch(`${serverUrl}/api/rooms/${roomId}`, {})
+      .then(r => r.ok ? r.json() : null)
+      .then(data => {
+        if (data?.room?.seats) {
+          const mySeat = ctx.screenData.seatIndex ?? 0;
+          playerNames = data.room.seats.map((s: any, i: number) => {
+            if (i === mySeat) return s.playerName || 'You';
+            return s.playerName || (s.type === 'ai-standby' ? `AI ${i + 1}` : 'Player');
+          });
+        }
+      })
+      .catch(() => {});
+
+    async function poll() {
       try {
-        const res = await fetch(`${serverUrl}/api/rooms/${roomId}/state`, {
+        const res = await fetch(`${serverUrl}/api/rooms/${roomId}/state?format=agent`, {
           headers: { 'Authorization': `Bearer ${token}` },
         });
-        if (res.ok) {
-          const state = await res.json();
-          if (state && state.players) {
-            // We have game state — update the bridge and render
-            if (networkBridge) {
-              networkBridge.state = state;
-              networkBridge.onUpdate(state);
-            }
-            return;
-          }
+        if (!res.ok) return;
+        const agentState = await res.json();
+        if (!agentState || !agentState.yourHandTiles) return;
+
+        // Also fetch filtered state for full board rendering
+        const stateRes = await fetch(`${serverUrl}/api/rooms/${roomId}/state`, {
+          headers: { 'Authorization': `Bearer ${token}` },
+        });
+        if (!stateRes.ok) return;
+        const filteredState = await stateRes.json();
+        if (!filteredState || !filteredState.players) return;
+
+        if (networkBridge) {
+          networkBridge.state = filteredState;
+          networkBridge.validActions = agentState.validActions || [];
+          render();
         }
-      } catch { /* retry */ }
-      await new Promise(r => setTimeout(r, 1000));
+      } catch { /* ignore */ }
+    }
+
+    // Initial poll
+    poll();
+    // Continue polling every 2s
+    gamePoller = setInterval(poll, 2000);
+  }
+
+  /** Stop game polling (called when leaving the screen). */
+  function stopGamePolling() {
+    if (gamePoller) {
+      clearInterval(gamePoller);
+      gamePoller = null;
     }
   }
 
