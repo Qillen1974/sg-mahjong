@@ -294,22 +294,14 @@ export function renderGameScreen(ctx: ScreenContext): HTMLElement {
     waiting.className = 'waiting-room';
     const isHost = ctx.screenData.isHost;
     const roomId = ctx.screenData.roomId;
-    const joinUrl = `${ctx.screenData.serverUrl}/api/rooms/${roomId}/join`;
     waiting.innerHTML = `
       <h2>Waiting for ${isHost ? 'Players' : 'Host to Start'}</h2>
-      <p>${isHost ? 'Share the room ID with agents or players to invite them.' : 'The host will start the game soon.'}</p>
+      <p>${isHost ? 'Tell your agents: "Join mahjong room" and give them the Room ID below.' : 'The host will start the game soon.'}</p>
       <div class="room-id-display">
         <label>Room ID</label>
         <div class="copy-row">
           <code id="room-id-text">${roomId}</code>
           <button class="btn btn-secondary btn-small" id="btn-copy-id">Copy</button>
-        </div>
-      </div>
-      <div class="room-id-display">
-        <label>Agent Join URL</label>
-        <div class="copy-row">
-          <code id="join-url-text">${joinUrl}</code>
-          <button class="btn btn-secondary btn-small" id="btn-copy-url">Copy</button>
         </div>
       </div>
       ${isHost ? '<button class="btn btn-primary btn-large" id="btn-start-game">Start Game</button>' : ''}
@@ -320,14 +312,6 @@ export function renderGameScreen(ctx: ScreenContext): HTMLElement {
     waiting.querySelector('#btn-copy-id')?.addEventListener('click', () => {
       navigator.clipboard.writeText(roomId).then(() => {
         const btn = waiting.querySelector('#btn-copy-id') as HTMLButtonElement;
-        btn.textContent = 'Copied!';
-        setTimeout(() => { btn.textContent = 'Copy'; }, 1500);
-      });
-    });
-
-    waiting.querySelector('#btn-copy-url')?.addEventListener('click', () => {
-      navigator.clipboard.writeText(joinUrl).then(() => {
-        const btn = waiting.querySelector('#btn-copy-url') as HTMLButtonElement;
         btn.textContent = 'Copied!';
         setTimeout(() => { btn.textContent = 'Copy'; }, 1500);
       });
