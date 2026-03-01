@@ -5,6 +5,7 @@ import { canChow } from '@lib/game';
 import { GameBridge } from '../state/game-bridge';
 import { NetworkBridge } from '../state/network-bridge';
 import { createGameBoard } from '../components/game-board';
+import { calculatePayments } from '@lib/payments';
 
 export function renderGameScreen(ctx: ScreenContext): HTMLElement {
   const screen = document.createElement('div');
@@ -105,30 +106,40 @@ export function renderGameScreen(ctx: ScreenContext): HTMLElement {
    */
   function detectBubblesFromStateChange(prev: any, curr: any) {
     if (!prev || !curr) return;
+    if (!prev.players || !curr.players) return;
     for (let i = 0; i < 4; i++) {
       const prevP = prev.players[i];
       const currP = curr.players[i];
       if (!prevP || !currP) continue;
 
       // Detect new discard
-      if (currP.discards.length > prevP.discards.length) {
-        const newTile = currP.discards[currP.discards.length - 1];
-        showBubble(i, newTile.name ?? `${newTile.suit} ${newTile.value}`);
+      const prevDiscLen = prevP.discards?.length ?? 0;
+      const currDiscLen = currP.discards?.length ?? 0;
+      if (currDiscLen > prevDiscLen) {
+        const newTile = currP.discards[currDiscLen - 1];
+        const tileName = newTile.name ?? `${newTile.suit} ${newTile.value}`;
+        console.log(`[bubble] Player ${i} discarded: ${tileName}`);
+        showBubble(i, tileName);
       }
 
       // Detect new meld (pong/chow/kong)
-      if (currP.openMelds.length > prevP.openMelds.length) {
-        const newMeld = currP.openMelds[currP.openMelds.length - 1];
+      const prevMeldLen = prevP.openMelds?.length ?? 0;
+      const currMeldLen = currP.openMelds?.length ?? 0;
+      if (currMeldLen > prevMeldLen) {
+        const newMeld = currP.openMelds[currMeldLen - 1];
         const labels: Record<string, string> = {
           pung: 'Pong!', chow: 'Chow!', kong: 'Kong!',
         };
-        showBubble(i, labels[newMeld.type] ?? 'Meld!');
+        const label = labels[newMeld.type] ?? 'Meld!';
+        console.log(`[bubble] Player ${i}: ${label}`);
+        showBubble(i, label);
       }
     }
 
     // Detect win
     if (curr.phase === 'roundOver' && curr.result && prev.phase !== 'roundOver') {
       if (curr.result.type === 'win' && curr.result.winnerIndex !== undefined) {
+        console.log(`[bubble] Player ${curr.result.winnerIndex}: Hu!`);
         showBubble(curr.result.winnerIndex, 'Hu!');
       }
     }
@@ -156,12 +167,18 @@ export function renderGameScreen(ctx: ScreenContext): HTMLElement {
     if (overlay) screen.appendChild(overlay);
 
     if (state.phase === 'roundOver') {
-      // Session controller handles this via roundCompleted event
-      // Show a brief "Round Over" message while processing
-      const msg = document.createElement('div');
-      msg.className = 'round-over-msg';
-      msg.textContent = 'Round complete...';
-      screen.appendChild(msg);
+      if (!isOnline) {
+        // Local mode — session controller handles navigation to result screen
+        const msg = document.createElement('div');
+        msg.className = 'round-over-msg';
+        msg.textContent = 'Round complete...';
+        screen.appendChild(msg);
+        return;
+      }
+
+      // Online mode — show result inline
+      stopGamePolling();
+      screen.appendChild(renderOnlineResult(state));
       return;
     }
 
@@ -511,6 +528,72 @@ export function renderGameScreen(ctx: ScreenContext): HTMLElement {
       clearInterval(gamePoller);
       gamePoller = null;
     }
+  }
+
+  /** Render result screen for online mode (inline, no session navigation). */
+  function renderOnlineResult(state: any): HTMLElement {
+    const result = state.result as GameResult | null;
+    const mySeat = isOnline && networkBridge ? networkBridge.mySeat : 0;
+    const names = playerNames ?? ['You', 'Player 2', 'Player 3', 'Player 4'];
+    const container = document.createElement('div');
+    container.className = 'result-content';
+
+    let heading = '';
+    let details = '';
+
+    if (!result || result.type === 'draw') {
+      heading = 'Draw Game';
+      details = '<p>The wall was exhausted with no winner.</p>';
+    } else if (result.winnerIndex !== undefined) {
+      const isMe = result.winnerIndex === mySeat;
+      heading = isMe ? 'You Win!' : `${names[result.winnerIndex]} Wins`;
+
+      if (result.scoring) {
+        const scoringLines = result.scoring.details
+          .map(d => `<li>${d.name}: ${d.tai} tai</li>`)
+          .join('');
+        details = `
+          <div class="scoring-breakdown">
+            <p class="total-tai">${result.scoring.tai} Tai Total</p>
+            <ul class="scoring-list">${scoringLines}</ul>
+          </div>
+        `;
+      }
+    }
+
+    // Calculate payments
+    const payments = result ? calculatePayments(result, {
+      base: 0.20, taiCap: 5, shooterPays: true,
+    }) : { deltas: [0, 0, 0, 0] as [number, number, number, number] };
+
+    const paymentRows = payments.deltas
+      .map((d, i) => {
+        const sign = d > 0 ? '+' : '';
+        const cls = d > 0 ? 'positive' : d < 0 ? 'negative' : '';
+        return `<tr class="${cls}"><td>${names[i]}</td><td>${sign}$${d.toFixed(2)}</td></tr>`;
+      })
+      .join('');
+
+    container.innerHTML = `
+      <h2>${heading}</h2>
+      ${details}
+      <div class="result-tables">
+        <div class="result-table">
+          <h3>This Round</h3>
+          <table>${paymentRows}</table>
+        </div>
+      </div>
+      <div class="result-actions">
+        <button class="btn btn-primary btn-large" id="btn-back-lobby">Back to Lobby</button>
+      </div>
+    `;
+
+    container.querySelector('#btn-back-lobby')?.addEventListener('click', () => {
+      networkBridge?.disconnect();
+      ctx.navigate('lobby');
+    });
+
+    return container;
   }
 
   return screen;
