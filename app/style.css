@@ -221,6 +221,12 @@ html, body {
   font-size: 11px;
 }
 
+.opponent-left .opponent-info,
+.opponent-right .opponent-info {
+  flex-direction: column;
+  gap: 2px;
+}
+
 .opponent-hand {
   display: flex;
   flex-wrap: wrap;
