@@ -383,8 +383,11 @@ export function renderGameScreen(ctx: ScreenContext): HTMLElement {
         if (!res.ok) {
           const err = await res.json();
           alert(err.error || 'Failed to start');
+          return;
         }
-        // Game will start via WebSocket state push
+        // Game started — fetch state via HTTP as fallback (in case WS isn't connected)
+        if (waitingTimer) { clearInterval(waitingTimer); waitingTimer = null; }
+        await pollForGameState(serverUrl, roomId, token);
       } catch (e) {
         alert('Failed to start game');
       }
@@ -405,6 +408,29 @@ export function renderGameScreen(ctx: ScreenContext): HTMLElement {
       }
       origOnUpdate(state);
     };
+  }
+
+  /** Poll server for game state via HTTP — fallback when WS isn't delivering updates. */
+  async function pollForGameState(serverUrl: string, roomId: string, token: string) {
+    for (let i = 0; i < 10; i++) {
+      try {
+        const res = await fetch(`${serverUrl}/api/rooms/${roomId}/state`, {
+          headers: { 'Authorization': `Bearer ${token}` },
+        });
+        if (res.ok) {
+          const state = await res.json();
+          if (state && state.players) {
+            // We have game state — update the bridge and render
+            if (networkBridge) {
+              networkBridge.state = state;
+              networkBridge.onUpdate(state);
+            }
+            return;
+          }
+        }
+      } catch { /* retry */ }
+      await new Promise(r => setTimeout(r, 1000));
+    }
   }
 
   return screen;
