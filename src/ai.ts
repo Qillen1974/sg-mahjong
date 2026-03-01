@@ -35,8 +35,8 @@ interface MiniMaxResponse {
 // Configuration
 // ---------------------------------------------------------------------------
 
-const MINIMAX_API_URL = 'https://api.minimaxi.chat/v1/text/chatcompletion_v2';
-const MINIMAX_MODEL = 'MiniMax-Text-02';
+const MINIMAX_API_URL = 'https://api.minimax.io/v1/chat/completions';
+const MINIMAX_MODEL = 'MiniMax-M2.5';
 const API_TIMEOUT_MS = 5000;
 
 // ---------------------------------------------------------------------------
@@ -59,8 +59,11 @@ export async function getAIDecision(
     return { action: validActions[0], reasoning: 'Only one option' };
   }
 
-  // Try MiniMax API
-  const apiKey = typeof process !== 'undefined' ? process.env?.MINIMAX_API_KEY : undefined;
+  // Try MiniMax API — check Vite env (browser) then Node env (tests)
+  const apiKey =
+    (typeof import.meta !== 'undefined' && (import.meta as any).env?.VITE_MINIMAX_API_KEY) ||
+    (typeof process !== 'undefined' && process.env?.MINIMAX_API_KEY) ||
+    undefined;
   if (apiKey) {
     try {
       const apiResult = await callMiniMaxAPI(state, playerIndex, validActions, apiKey);
