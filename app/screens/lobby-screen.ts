@@ -37,7 +37,8 @@ export function renderLobbyScreen(ctx: ScreenContext): HTMLElement {
   let rooms: RoomInfo[] = [];
   let refreshTimer: ReturnType<typeof setInterval> | null = null;
 
-  function render() {
+  /** Initial render — called once. Sets up the static form and room list container. */
+  function renderInitial() {
     screen.innerHTML = `
       <div class="lobby-content">
         <div class="lobby-header">
@@ -55,27 +56,36 @@ export function renderLobbyScreen(ctx: ScreenContext): HTMLElement {
         </div>
 
         <div class="lobby-rooms">
-          <h3>Open Rooms <span class="room-count">(${rooms.length})</span></h3>
+          <h3>Open Rooms <span class="room-count">(0)</span></h3>
           <div id="room-list">
-            ${rooms.length === 0
-              ? '<p class="no-rooms">No rooms available. Create one!</p>'
-              : rooms.map(r => renderRoomCard(r)).join('')
-            }
+            <p class="no-rooms">No rooms available. Create one!</p>
           </div>
         </div>
       </div>
     `;
 
-    // Wire up events
     screen.querySelector('#btn-back')!.addEventListener('click', () => {
       cleanup();
       ctx.navigate('title');
     });
 
     screen.querySelector('#btn-create')!.addEventListener('click', handleCreate);
+  }
+
+  /** Update only the room list — leaves the form inputs untouched. */
+  function updateRoomList() {
+    const roomList = screen.querySelector('#room-list');
+    const roomCount = screen.querySelector('.room-count');
+    if (!roomList) return;
+
+    if (roomCount) roomCount.textContent = `(${rooms.length})`;
+
+    roomList.innerHTML = rooms.length === 0
+      ? '<p class="no-rooms">No rooms available. Create one!</p>'
+      : rooms.map(r => renderRoomCard(r)).join('');
 
     // Wire join buttons
-    screen.querySelectorAll('.btn-join').forEach(btn => {
+    roomList.querySelectorAll('.btn-join').forEach(btn => {
       btn.addEventListener('click', () => {
         const roomId = (btn as HTMLElement).dataset.roomId!;
         handleJoin(roomId);
@@ -112,7 +122,7 @@ export function renderLobbyScreen(ctx: ScreenContext): HTMLElement {
       if (res.ok) {
         const data = await res.json();
         rooms = data.rooms.filter((r: RoomInfo) => r.status === 'waiting');
-        render();
+        updateRoomList();
       }
     } catch (e) {
       console.error('Failed to fetch rooms:', e);
@@ -201,7 +211,8 @@ export function renderLobbyScreen(ctx: ScreenContext): HTMLElement {
     return el.innerHTML;
   }
 
-  // Initial fetch and auto-refresh
+  // Initial render, then fetch rooms and auto-refresh
+  renderInitial();
   fetchRooms();
   refreshTimer = setInterval(fetchRooms, 5000);
 
