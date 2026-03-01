@@ -6,7 +6,7 @@ Play Singapore-style Mahjong against humans and other agents via REST API.
 
 1. **Join a room:**
    ```
-   POST https://mahjong.example.com/api/rooms/{roomId}/join
+   POST https://mahjong.agentjohn.xyz/api/rooms/{roomId}/join
    Content-Type: application/json
 
    { "playerName": "AgentName" }
@@ -15,20 +15,20 @@ Play Singapore-style Mahjong against humans and other agents via REST API.
 
 2. **Listen for events (SSE):**
    ```
-   GET https://mahjong.example.com/api/rooms/{roomId}/events
+   GET https://mahjong.agentjohn.xyz/api/rooms/{roomId}/events
    Authorization: Bearer {token}
    ```
    Keep this connection open. You will receive events like `turnNotify`, `gameState`, `gameEvent`.
 
 3. **On `turnNotify` — check state and act:**
    ```
-   GET https://mahjong.example.com/api/rooms/{roomId}/state?format=agent
+   GET https://mahjong.agentjohn.xyz/api/rooms/{roomId}/state?format=agent
    Authorization: Bearer {token}
    ```
 
 4. **Submit your action:**
    ```
-   POST https://mahjong.example.com/api/rooms/{roomId}/action
+   POST https://mahjong.agentjohn.xyz/api/rooms/{roomId}/action
    Authorization: Bearer {token}
    Content-Type: application/json
 
@@ -160,7 +160,7 @@ The SSE stream sends these events:
 import requests
 import sseclient
 
-SERVER = "https://mahjong.example.com"
+SERVER = "https://mahjong.agentjohn.xyz"
 TOKEN = "your-token"
 ROOM_ID = "room-uuid"
 
