@@ -26,14 +26,18 @@ export interface GameBoardOptions {
   mySeat?: number;
   /** Player names per seat index. Falls back to PLAYER_CONFIG defaults. */
   playerNames?: string[];
+  /** Avatars per seat index. Falls back to PLAYER_CONFIG defaults. */
+  playerAvatars?: string[];
 }
 
 export function createGameBoard(opts: GameBoardOptions): HTMLElement {
   const { state, validActions, selectedTile, lastDrawnTileId, onTileClick, onAction } = opts;
   const mySeat = opts.mySeat ?? 0;
   const names = opts.playerNames ?? PLAYER_CONFIG.map(p => p.name);
+  const avatars = opts.playerAvatars ?? PLAYER_CONFIG.map(p => p.avatar);
   const el = document.createElement('div');
   el.className = 'game-board';
+  const currentPlayer = state.currentPlayerIndex;
 
   // Seat mapping: bottom=me, right=+1, top=+2, left=+3
   const bottomIdx = mySeat;
@@ -60,8 +64,9 @@ export function createGameBoard(opts: GameBoardOptions): HTMLElement {
     player: state.players[topIdx],
     position: 'top',
     isDealer: state.dealerIndex === topIdx,
+    isCurrentTurn: currentPlayer === topIdx,
     name: names[topIdx],
-    avatar: PLAYER_CONFIG[topIdx].avatar,
+    avatar: avatars[topIdx],
   });
   topOpp.classList.add('area-top');
   el.appendChild(topOpp);
@@ -71,8 +76,9 @@ export function createGameBoard(opts: GameBoardOptions): HTMLElement {
     player: state.players[leftIdx],
     position: 'left',
     isDealer: state.dealerIndex === leftIdx,
+    isCurrentTurn: currentPlayer === leftIdx,
     name: names[leftIdx],
-    avatar: PLAYER_CONFIG[leftIdx].avatar,
+    avatar: avatars[leftIdx],
   });
   leftOpp.classList.add('area-left');
   el.appendChild(leftOpp);
@@ -87,15 +93,16 @@ export function createGameBoard(opts: GameBoardOptions): HTMLElement {
     player: state.players[rightIdx],
     position: 'right',
     isDealer: state.dealerIndex === rightIdx,
+    isCurrentTurn: currentPlayer === rightIdx,
     name: names[rightIdx],
-    avatar: PLAYER_CONFIG[rightIdx].avatar,
+    avatar: avatars[rightIdx],
   });
   rightOpp.classList.add('area-right');
   el.appendChild(rightOpp);
 
   // Bottom area: human melds + info + hand — grid-area: bottom
   const bottomArea = document.createElement('div');
-  bottomArea.className = 'area-bottom';
+  bottomArea.className = `area-bottom${currentPlayer === bottomIdx ? ' active-turn' : ''}`;
 
   // Human melds + bonus
   const myMelds = document.createElement('div');
@@ -114,7 +121,7 @@ export function createGameBoard(opts: GameBoardOptions): HTMLElement {
 
   const myAvatar = document.createElement('span');
   myAvatar.className = 'avatar';
-  myAvatar.textContent = PLAYER_CONFIG[bottomIdx].avatar;
+  myAvatar.textContent = avatars[bottomIdx];
   myInfo.appendChild(myAvatar);
 
   const myWind = document.createElement('span');

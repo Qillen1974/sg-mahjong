@@ -552,6 +552,30 @@ html, body {
   to { transform: scale(1); opacity: 1; }
 }
 
+/* Active turn indicator */
+.active-turn {
+  position: relative;
+}
+.active-turn .opponent-info,
+.active-turn .my-info {
+  background: rgba(255, 200, 50, 0.25);
+  border-radius: 6px;
+  padding: 2px 6px;
+}
+.active-turn .player-name {
+  color: #ffc832;
+  font-weight: 700;
+}
+
+@keyframes turn-pulse {
+  0%, 100% { box-shadow: 0 0 4px rgba(255, 200, 50, 0.3); }
+  50% { box-shadow: 0 0 12px rgba(255, 200, 50, 0.6); }
+}
+.active-turn .opponent-info,
+.active-turn .my-info {
+  animation: turn-pulse 1.5s ease-in-out infinite;
+}
+
 /* Title screen button stack */
 .title-content .btn + .btn {
   margin-top: 8px;

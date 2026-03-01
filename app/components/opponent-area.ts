@@ -8,6 +8,7 @@ export interface OpponentAreaOptions {
   player: PlayerState;
   position: 'top' | 'left' | 'right';
   isDealer: boolean;
+  isCurrentTurn?: boolean;
   name: string;
   avatar: string;
 }
@@ -19,7 +20,7 @@ function windChar(w: Wind): string {
 export function createOpponentArea(opts: OpponentAreaOptions): HTMLElement {
   const { player, position, isDealer, name, avatar } = opts;
   const el = document.createElement('div');
-  el.className = `opponent-area opponent-${position}`;
+  el.className = `opponent-area opponent-${position}${opts.isCurrentTurn ? ' active-turn' : ''}`;
 
   // Info bar: avatar + wind + name + tile count
   const info = document.createElement('div');

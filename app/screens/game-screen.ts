@@ -39,6 +39,8 @@ export function renderGameScreen(ctx: ScreenContext): HTMLElement {
   const isResume = !!ctx.screenData?.resumeBridge;
   /** Player names per seat index (populated in online mode from room data). */
   let playerNames: string[] | undefined;
+  /** Previous state snapshot for detecting changes in online mode (for bubbles). */
+  let prevOnlineState: any = null;
 
   // Persistent bubble overlay — not destroyed by render()
   const bubbleOverlay = document.createElement('div');
@@ -59,17 +61,7 @@ export function renderGameScreen(ctx: ScreenContext): HTMLElement {
     });
 
     bridge.onBubble = (playerIndex: number, text: string) => {
-      const existing = bubbleTimers.get(playerIndex);
-      if (existing) clearTimeout(existing);
-
-      bubbles.set(playerIndex, text);
-      renderBubbles();
-
-      bubbleTimers.set(playerIndex, setTimeout(() => {
-        bubbles.delete(playerIndex);
-        bubbleTimers.delete(playerIndex);
-        renderBubbles();
-      }, 1500));
+      showBubble(playerIndex, text);
     };
 
     // Track drawn tile for visual gap
@@ -82,13 +74,63 @@ export function renderGameScreen(ctx: ScreenContext): HTMLElement {
 
   function renderBubbles() {
     bubbleOverlay.innerHTML = '';
+    const mySeat = isOnline && networkBridge ? networkBridge.mySeat : 0;
     for (const [playerIndex, text] of bubbles) {
       const el = document.createElement('div');
-      // Position class: player 0=bottom, 1=right, 2=top, 3=left
-      const pos = ['bottom', 'right', 'top', 'left'][playerIndex];
+      // Position relative to my seat: 0=bottom, +1=right, +2=top, +3=left
+      const relPos = (playerIndex - mySeat + 4) % 4;
+      const pos = ['bottom', 'right', 'top', 'left'][relPos];
       el.className = `speech-bubble speech-bubble-${pos}`;
       el.textContent = text;
       bubbleOverlay.appendChild(el);
+    }
+  }
+
+  /** Show a bubble for a player. */
+  function showBubble(playerIndex: number, text: string) {
+    const existing = bubbleTimers.get(playerIndex);
+    if (existing) clearTimeout(existing);
+    bubbles.set(playerIndex, text);
+    renderBubbles();
+    bubbleTimers.set(playerIndex, setTimeout(() => {
+      bubbles.delete(playerIndex);
+      bubbleTimers.delete(playerIndex);
+      renderBubbles();
+    }, 1800));
+  }
+
+  /**
+   * Detect state changes between polls and emit speech bubbles.
+   * Compares previous and current filtered state to find discards, melds, wins.
+   */
+  function detectBubblesFromStateChange(prev: any, curr: any) {
+    if (!prev || !curr) return;
+    for (let i = 0; i < 4; i++) {
+      const prevP = prev.players[i];
+      const currP = curr.players[i];
+      if (!prevP || !currP) continue;
+
+      // Detect new discard
+      if (currP.discards.length > prevP.discards.length) {
+        const newTile = currP.discards[currP.discards.length - 1];
+        showBubble(i, newTile.name ?? `${newTile.suit} ${newTile.value}`);
+      }
+
+      // Detect new meld (pong/chow/kong)
+      if (currP.openMelds.length > prevP.openMelds.length) {
+        const newMeld = currP.openMelds[currP.openMelds.length - 1];
+        const labels: Record<string, string> = {
+          pung: 'Pong!', chow: 'Chow!', kong: 'Kong!',
+        };
+        showBubble(i, labels[newMeld.type] ?? 'Meld!');
+      }
+    }
+
+    // Detect win
+    if (curr.phase === 'roundOver' && curr.result && prev.phase !== 'roundOver') {
+      if (curr.result.type === 'win' && curr.result.winnerIndex !== undefined) {
+        showBubble(curr.result.winnerIndex, 'Hu!');
+      }
     }
   }
 
@@ -262,15 +304,7 @@ export function renderGameScreen(ctx: ScreenContext): HTMLElement {
     // Online mode — wire up NetworkBridge
     networkBridge.onUpdate = () => render();
     networkBridge.onBubble = (playerIndex: number, text: string) => {
-      const existing = bubbleTimers.get(playerIndex);
-      if (existing) clearTimeout(existing);
-      bubbles.set(playerIndex, text);
-      renderBubbles();
-      bubbleTimers.set(playerIndex, setTimeout(() => {
-        bubbles.delete(playerIndex);
-        bubbleTimers.delete(playerIndex);
-        renderBubbles();
-      }, 1500));
+      showBubble(playerIndex, text);
     };
 
     // Show waiting room immediately while connecting
@@ -454,6 +488,10 @@ export function renderGameScreen(ctx: ScreenContext): HTMLElement {
         if (!filteredState || !filteredState.players) return;
 
         if (networkBridge) {
+          // Detect changes for speech bubbles before updating state
+          detectBubblesFromStateChange(prevOnlineState, filteredState);
+          prevOnlineState = JSON.parse(JSON.stringify(filteredState));
+
           networkBridge.state = filteredState;
           networkBridge.validActions = agentState.validActions || [];
           render();
