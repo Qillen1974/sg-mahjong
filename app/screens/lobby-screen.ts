@@ -121,8 +121,14 @@ export function renderLobbyScreen(ctx: ScreenContext): HTMLElement {
       const res = await fetch(`${SERVER}/api/rooms`);
       if (res.ok) {
         const data = await res.json();
-        rooms = data.rooms.filter((r: RoomInfo) => r.status === 'waiting');
-        updateRoomList();
+        const newRooms = data.rooms.filter((r: RoomInfo) => r.status === 'waiting');
+        // Only update DOM if room list actually changed (avoid stealing input focus)
+        const newJson = JSON.stringify(newRooms.map((r: RoomInfo) => r.id));
+        const oldJson = JSON.stringify(rooms.map(r => r.id));
+        if (newJson !== oldJson) {
+          rooms = newRooms;
+          updateRoomList();
+        }
       }
     } catch (e) {
       console.error('Failed to fetch rooms:', e);
