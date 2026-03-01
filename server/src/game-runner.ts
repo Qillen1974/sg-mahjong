@@ -40,6 +40,9 @@ export class GameRunner {
   private turnTimer: ReturnType<typeof setTimeout> | null = null;
   private pendingClaims: Map<number, PlayerAction> = new Map();
   private claimResolve: (() => void) | null = null;
+  /** Track consecutive timeouts per seat — auto-promote to AI after threshold. */
+  private timeoutCount: [number, number, number, number] = [0, 0, 0, 0];
+  private static readonly AUTO_AI_THRESHOLD = 2;
 
   constructor(room: Room, broadcast: BroadcastFn) {
     this.room = room;
@@ -114,7 +117,7 @@ export class GameRunner {
     }
 
     if (phase === 'postDraw' || phase === 'discard') {
-      if (seatType === 'ai-standby') {
+      if (seatType === 'ai-standby' || this.isAutoAI(currentPlayerIndex)) {
         await this.doAITurn(currentPlayerIndex);
       } else {
         // Human or agent — notify and wait
@@ -130,6 +133,11 @@ export class GameRunner {
       this.broadcastState();
       return;
     }
+  }
+
+  /** Check if a human seat has been auto-promoted to AI due to inactivity. */
+  private isAutoAI(seatIndex: number): boolean {
+    return this.timeoutCount[seatIndex] >= GameRunner.AUTO_AI_THRESHOLD;
   }
 
   /** Execute AI turn for an ai-standby seat. */
@@ -150,10 +158,10 @@ export class GameRunner {
     this.pendingClaims.clear();
     const lastDiscardPlayer = this.state.lastDiscardPlayerIndex!;
 
-    // Collect AI claims instantly
+    // Collect AI claims instantly (including auto-AI promoted seats)
     for (let i = 0; i < 4; i++) {
       if (i === lastDiscardPlayer) continue;
-      if (this.room.seats[i].type === 'ai-standby') {
+      if (this.room.seats[i].type === 'ai-standby' || this.isAutoAI(i)) {
         const actions = getValidActions(this.state, i);
         if (actions.length > 0 && actions.some(a => a.type !== 'pass')) {
           const decision = await getAIDecision(this.state, i, actions);
@@ -164,11 +172,11 @@ export class GameRunner {
       }
     }
 
-    // Notify human/agent players who can claim
+    // Notify active human/agent players who can claim
     const humanClaimers: number[] = [];
     for (let i = 0; i < 4; i++) {
       if (i === lastDiscardPlayer) continue;
-      if (this.room.seats[i].type === 'human') {
+      if (this.room.seats[i].type === 'human' && !this.isAutoAI(i)) {
         const actions = getValidActions(this.state, i);
         if (actions.length > 0 && actions.some(a => a.type !== 'pass')) {
           humanClaimers.push(i);
@@ -269,7 +277,9 @@ export class GameRunner {
       this._actionSeat = seatIndex;
 
       this.turnTimer = setTimeout(async () => {
-        console.log(`[GameRunner] Turn timeout for seat ${seatIndex} — auto-playing with AI`);
+        this.timeoutCount[seatIndex]++;
+        const isNowAutoAI = this.isAutoAI(seatIndex);
+        console.log(`[GameRunner] Turn timeout for seat ${seatIndex} (count=${this.timeoutCount[seatIndex]}${isNowAutoAI ? ', now auto-AI' : ''}) — auto-playing with AI`);
         // Use AI decision as fallback when player doesn't respond
         try {
           const actions = getValidActions(this.state, seatIndex);
@@ -325,6 +335,8 @@ export class GameRunner {
       return { ok: false, error: 'Not your turn' };
     }
 
+    // Player is active — reset timeout counter
+    this.timeoutCount[seatIndex] = 0;
     this.applyAction(seatIndex, action);
 
     // Clear turn timer and resolve the wait

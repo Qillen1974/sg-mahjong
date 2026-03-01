@@ -104,29 +104,35 @@ export function renderGameScreen(ctx: ScreenContext): HTMLElement {
    * Detect state changes between polls and emit speech bubbles.
    * Compares previous and current filtered state to find discards, melds, wins.
    */
-  function detectBubblesFromStateChange(prev: any, curr: any) {
-    if (!prev || !curr) return;
-    if (!prev.players || !curr.players) return;
-    for (let i = 0; i < 4; i++) {
-      const prevP = prev.players[i];
-      const currP = curr.players[i];
-      if (!prevP || !currP) continue;
+  /** Track previous turn number to detect state advances. */
+  let prevTurnNumber = -1;
+  let prevLastDiscardId: string | null = null;
+  let prevMeldCounts: number[] = [0, 0, 0, 0];
 
-      // Detect new discard
-      const prevDiscLen = prevP.discards?.length ?? 0;
-      const currDiscLen = currP.discards?.length ?? 0;
-      if (currDiscLen > prevDiscLen) {
-        const newTile = currP.discards[currDiscLen - 1];
-        const tileName = newTile.name ?? `${newTile.suit} ${newTile.value}`;
-        console.log(`[bubble] Player ${i} discarded: ${tileName}`);
-        showBubble(i, tileName);
+  function detectBubblesFromStateChange(_prev: any, curr: any) {
+    if (!curr || !curr.players) return;
+
+    const currTurn = curr.turnNumber ?? 0;
+
+    // Detect new discard via lastDiscard changing
+    if (curr.lastDiscard && curr.lastDiscardPlayerIndex !== null && curr.lastDiscardPlayerIndex !== undefined) {
+      const discardId = curr.lastDiscard.id ?? '';
+      if (discardId !== prevLastDiscardId) {
+        const tile = curr.lastDiscard;
+        const tileName = tile.name ?? `${tile.suit} ${tile.value}`;
+        console.log(`[bubble] Player ${curr.lastDiscardPlayerIndex} discarded: ${tileName} (turn ${currTurn})`);
+        showBubble(curr.lastDiscardPlayerIndex, tileName);
+        prevLastDiscardId = discardId;
       }
+    }
 
-      // Detect new meld (pong/chow/kong)
-      const prevMeldLen = prevP.openMelds?.length ?? 0;
-      const currMeldLen = currP.openMelds?.length ?? 0;
-      if (currMeldLen > prevMeldLen) {
-        const newMeld = currP.openMelds[currMeldLen - 1];
+    // Detect new melds
+    for (let i = 0; i < 4; i++) {
+      const p = curr.players[i];
+      if (!p) continue;
+      const currMeldLen = p.openMelds?.length ?? 0;
+      if (currMeldLen > prevMeldCounts[i]) {
+        const newMeld = p.openMelds[currMeldLen - 1];
         const labels: Record<string, string> = {
           pung: 'Pong!', chow: 'Chow!', kong: 'Kong!',
         };
@@ -134,15 +140,18 @@ export function renderGameScreen(ctx: ScreenContext): HTMLElement {
         console.log(`[bubble] Player ${i}: ${label}`);
         showBubble(i, label);
       }
+      prevMeldCounts[i] = currMeldLen;
     }
 
     // Detect win
-    if (curr.phase === 'roundOver' && curr.result && prev.phase !== 'roundOver') {
+    if (curr.phase === 'roundOver' && curr.result && prevTurnNumber !== -1 && currTurn !== prevTurnNumber) {
       if (curr.result.type === 'win' && curr.result.winnerIndex !== undefined) {
         console.log(`[bubble] Player ${curr.result.winnerIndex}: Hu!`);
         showBubble(curr.result.winnerIndex, 'Hu!');
       }
     }
+
+    prevTurnNumber = currTurn;
   }
 
   function render() {
