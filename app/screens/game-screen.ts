@@ -37,6 +37,8 @@ export function renderGameScreen(ctx: ScreenContext): HTMLElement {
   const bubbles = new Map<number, string>();
   const bubbleTimers = new Map<number, ReturnType<typeof setTimeout>>();
   const isResume = !!ctx.screenData?.resumeBridge;
+  /** Player names per seat index (populated in online mode from room data). */
+  let playerNames: string[] | undefined;
 
   // Persistent bubble overlay — not destroyed by render()
   const bubbleOverlay = document.createElement('div');
@@ -153,6 +155,7 @@ export function renderGameScreen(ctx: ScreenContext): HTMLElement {
       onTileClick: handleTileClick,
       onAction: handleAction,
       mySeat: isOnline && networkBridge ? networkBridge.mySeat : 0,
+      playerNames,
     });
 
     screen.appendChild(board);
@@ -317,6 +320,12 @@ export function renderGameScreen(ctx: ScreenContext): HTMLElement {
     let waitingTimer: ReturnType<typeof setInterval> | null = null;
 
     function updateSeats(seats: { type: string; playerName: string | null }[]) {
+      // Store player names for game board display
+      playerNames = seats.map((s, i) => {
+        if (i === (ctx.screenData.seatIndex ?? 0)) return s.playerName || 'You';
+        return s.playerName || (s.type === 'empty' ? 'Empty' : `AI ${i + 1}`);
+      });
+
       const seatList = waiting.querySelector('#seat-list');
       if (!seatList) return;
       seatList.innerHTML = seats.map((s, i) => {

@@ -24,11 +24,14 @@ export interface GameBoardOptions {
   onAction: (action: PlayerAction) => void;
   /** Which seat index is "you" (bottom of the board). Defaults to 0. */
   mySeat?: number;
+  /** Player names per seat index. Falls back to PLAYER_CONFIG defaults. */
+  playerNames?: string[];
 }
 
 export function createGameBoard(opts: GameBoardOptions): HTMLElement {
   const { state, validActions, selectedTile, lastDrawnTileId, onTileClick, onAction } = opts;
   const mySeat = opts.mySeat ?? 0;
+  const names = opts.playerNames ?? PLAYER_CONFIG.map(p => p.name);
   const el = document.createElement('div');
   el.className = 'game-board';
 
@@ -57,7 +60,7 @@ export function createGameBoard(opts: GameBoardOptions): HTMLElement {
     player: state.players[topIdx],
     position: 'top',
     isDealer: state.dealerIndex === topIdx,
-    name: PLAYER_CONFIG[topIdx].name,
+    name: names[topIdx],
     avatar: PLAYER_CONFIG[topIdx].avatar,
   });
   topOpp.classList.add('area-top');
@@ -68,7 +71,7 @@ export function createGameBoard(opts: GameBoardOptions): HTMLElement {
     player: state.players[leftIdx],
     position: 'left',
     isDealer: state.dealerIndex === leftIdx,
-    name: PLAYER_CONFIG[leftIdx].name,
+    name: names[leftIdx],
     avatar: PLAYER_CONFIG[leftIdx].avatar,
   });
   leftOpp.classList.add('area-left');
@@ -84,7 +87,7 @@ export function createGameBoard(opts: GameBoardOptions): HTMLElement {
     player: state.players[rightIdx],
     position: 'right',
     isDealer: state.dealerIndex === rightIdx,
-    name: PLAYER_CONFIG[rightIdx].name,
+    name: names[rightIdx],
     avatar: PLAYER_CONFIG[rightIdx].avatar,
   });
   rightOpp.classList.add('area-right');
@@ -121,7 +124,7 @@ export function createGameBoard(opts: GameBoardOptions): HTMLElement {
 
   const myName = document.createElement('span');
   myName.className = 'player-name';
-  myName.textContent = PLAYER_CONFIG[bottomIdx].name;
+  myName.textContent = names[bottomIdx];
   myInfo.appendChild(myName);
 
   bottomArea.appendChild(myInfo);
