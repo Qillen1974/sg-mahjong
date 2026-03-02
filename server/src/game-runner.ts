@@ -198,26 +198,32 @@ export class GameRunner {
       }
     }
 
-    // Collect agent claims via LLM/webhook (server-side, like AI)
+    // Collect agent and human claims concurrently.
+    // Agent LLM calls can take seconds — we don't want them blocking the human claim window.
+    const agentClaimPromises: Promise<void>[] = [];
     for (let i = 0; i < 4; i++) {
       if (i === lastDiscardPlayer) continue;
       if (this.room.seats[i].type === 'agent') {
         const actions = getValidActions(this.state, i);
         if (actions.length > 0 && actions.some(a => a.type !== 'pass')) {
-          try {
-            const config = this.room.seats[i].agentConfig!;
-            const action = await handleAgentTurn(this.state, i, actions, config);
-            if (action.type !== 'pass') {
-              this.pendingClaims.set(i, action);
-            }
-          } catch (err) {
-            console.warn(`[GameRunner] Agent claim failed for seat ${i}, falling back to AI:`, err);
-            // Fall back to heuristic AI for the claim decision
-            const decision = await getAIDecision(this.state, i, actions);
-            if (decision.action.type !== 'pass') {
-              this.pendingClaims.set(i, decision.action);
-            }
-          }
+          const seatIdx = i;
+          agentClaimPromises.push(
+            (async () => {
+              try {
+                const config = this.room.seats[seatIdx].agentConfig!;
+                const action = await handleAgentTurn(this.state, seatIdx, actions, config);
+                if (action.type !== 'pass') {
+                  this.pendingClaims.set(seatIdx, action);
+                }
+              } catch (err) {
+                console.warn(`[GameRunner] Agent claim failed for seat ${seatIdx}, falling back to AI:`, err);
+                const decision = await getAIDecision(this.state, seatIdx, actions);
+                if (decision.action.type !== 'pass') {
+                  this.pendingClaims.set(seatIdx, decision.action);
+                }
+              }
+            })()
+          );
         }
       }
     }
@@ -235,10 +241,11 @@ export class GameRunner {
       }
     }
 
-    // Wait for all human claims or timeout
-    if (humanClaimers.length > 0) {
-      await this.waitForClaims(humanClaimers);
-    }
+    // Wait for agent LLM calls and human claims concurrently
+    const humanClaimPromise = humanClaimers.length > 0
+      ? this.waitForClaims(humanClaimers)
+      : Promise.resolve();
+    await Promise.all([...agentClaimPromises, humanClaimPromise]);
 
     // Resolve claims by priority
     this.resolveClaimWindow();
