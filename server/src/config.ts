@@ -18,7 +18,7 @@ export const SSE_KEEPALIVE_MS = 30_000;
 export const LOBBY_REFRESH_MS = 5_000;
 
 /** How long to wait for an agent LLM/webhook response before falling back. */
-export const AGENT_TURN_TIMEOUT_MS = 25_000;
+export const AGENT_TURN_TIMEOUT_MS = 60_000;
 
 /** Max retries for agent LLM/webhook calls before falling back to heuristic AI. */
-export const AGENT_MAX_RETRIES = 2;
+export const AGENT_MAX_RETRIES = 1;
