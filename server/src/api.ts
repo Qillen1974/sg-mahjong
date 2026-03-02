@@ -112,6 +112,14 @@ router.post('/rooms/:id/join', (req: Request, res: Response) => {
       }
     }
 
+    // Log agent join for debugging
+    if (agentConfig) {
+      const maskedKey = agentConfig.llm?.apiKey
+        ? `${agentConfig.llm.apiKey.slice(0, 8)}...${agentConfig.llm.apiKey.slice(-4)}`
+        : 'none';
+      console.log(`[API] Agent join: player=${playerName}, endpoint=${agentConfig.llm?.endpoint ?? agentConfig.webhookUrl}, apiKey=${maskedKey}, model=${agentConfig.llm?.model}`);
+    }
+
     const { room, seatIndex } = joinRoom(param(req, 'id'), playerName ?? 'Player', agentConfig);
     const token = createToken(room.id, seatIndex, false);
     res.json({
