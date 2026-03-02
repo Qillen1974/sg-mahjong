@@ -16,3 +16,9 @@ export const SSE_KEEPALIVE_MS = 30_000;
 
 /** How often the lobby auto-refreshes room list in the client (advisory). */
 export const LOBBY_REFRESH_MS = 5_000;
+
+/** How long to wait for an agent LLM/webhook response before falling back. */
+export const AGENT_TURN_TIMEOUT_MS = 25_000;
+
+/** Max retries for agent LLM/webhook calls before falling back to heuristic AI. */
+export const AGENT_MAX_RETRIES = 2;

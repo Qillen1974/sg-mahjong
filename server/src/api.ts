@@ -46,7 +46,7 @@ router.get('/rooms', (_req: Request, res: Response) => {
     name: r.settings.name,
     seats: r.seats.map(s => ({ type: s.type, playerName: s.playerName })),
     status: r.status,
-    playerCount: r.seats.filter(s => s.type === 'human').length,
+    playerCount: r.seats.filter(s => s.type === 'human' || s.type === 'agent').length,
     createdAt: r.createdAt,
   }));
   res.json({ rooms });
@@ -82,8 +82,37 @@ router.get('/rooms/:id', (req: Request, res: Response) => {
 /** POST /api/rooms/:id/join — Join a room. */
 router.post('/rooms/:id/join', (req: Request, res: Response) => {
   try {
-    const { playerName } = req.body ?? {};
-    const { room, seatIndex } = joinRoom(param(req, 'id'), playerName ?? 'Player');
+    const { playerName, agentConfig } = req.body ?? {};
+
+    // Validate agentConfig if provided
+    if (agentConfig) {
+      if (!agentConfig.llm && !agentConfig.webhookUrl) {
+        res.status(400).json({ error: 'agentConfig must include "llm" or "webhookUrl"' });
+        return;
+      }
+      if (agentConfig.llm) {
+        if (!agentConfig.llm.endpoint || !agentConfig.llm.apiKey || !agentConfig.llm.model) {
+          res.status(400).json({ error: 'agentConfig.llm requires endpoint, apiKey, and model' });
+          return;
+        }
+        try {
+          new URL(agentConfig.llm.endpoint);
+        } catch {
+          res.status(400).json({ error: 'agentConfig.llm.endpoint must be a valid URL' });
+          return;
+        }
+      }
+      if (agentConfig.webhookUrl) {
+        try {
+          new URL(agentConfig.webhookUrl);
+        } catch {
+          res.status(400).json({ error: 'agentConfig.webhookUrl must be a valid URL' });
+          return;
+        }
+      }
+    }
+
+    const { room, seatIndex } = joinRoom(param(req, 'id'), playerName ?? 'Player', agentConfig);
     const token = createToken(room.id, seatIndex, false);
     res.json({
       roomId: room.id,
@@ -237,6 +266,6 @@ function sanitizeRoom(room: ReturnType<typeof getRoom>) {
     settings: room.settings,
     seats: room.seats.map(s => ({ type: s.type, playerName: s.playerName })),
     status: room.status,
-    playerCount: room.seats.filter(s => s.type === 'human').length,
+    playerCount: room.seats.filter(s => s.type === 'human' || s.type === 'agent').length,
   };
 }

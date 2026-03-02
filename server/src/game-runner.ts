@@ -29,6 +29,7 @@ import { tilesMatch } from '../../src/tiles';
 import { filterStateForPlayer, filterEventForPlayer } from './state-filter.js';
 import { CLAIM_TIMEOUT_MS, TURN_TIMEOUT_MS } from './config.js';
 import type { Room } from './room-manager.js';
+import { handleAgentTurn } from './agent-webhook.js';
 
 export type BroadcastFn = (seatIndex: number, type: string, data: unknown) => void;
 
@@ -49,6 +50,7 @@ export class GameRunner {
     this.broadcast = broadcast;
 
     // Map room seat types to engine player types
+    // 'agent' seats are treated as 'human' in the engine — the server handles their turns
     const playerTypes: [PlayerType, PlayerType, PlayerType, PlayerType] = room.seats.map(
       s => (s.type === 'ai-standby' ? 'ai' : 'human'),
     ) as [PlayerType, PlayerType, PlayerType, PlayerType];
@@ -61,7 +63,7 @@ export class GameRunner {
   /** Broadcast filtered state to each connected player. */
   private broadcastState(): void {
     for (let i = 0; i < 4; i++) {
-      if (this.room.seats[i].type === 'human') {
+      if (this.room.seats[i].type === 'human' || this.room.seats[i].type === 'agent') {
         this.broadcast(i, 'gameState', filterStateForPlayer(this.state, i));
       }
     }
@@ -70,7 +72,7 @@ export class GameRunner {
   /** Broadcast a filtered event to each connected player. */
   private broadcastAllEvent(event: GameEvent): void {
     for (let i = 0; i < 4; i++) {
-      if (this.room.seats[i].type === 'human') {
+      if (this.room.seats[i].type === 'human' || this.room.seats[i].type === 'agent') {
         this.broadcast(i, 'gameEvent', filterEventForPlayer(event, i));
       }
     }
@@ -119,8 +121,10 @@ export class GameRunner {
     if (phase === 'postDraw' || phase === 'discard') {
       if (seatType === 'ai-standby' || this.isAutoAI(currentPlayerIndex)) {
         await this.doAITurn(currentPlayerIndex);
+      } else if (seatType === 'agent') {
+        await this.doAgentTurn(currentPlayerIndex);
       } else {
-        // Human or agent — notify and wait
+        // Human — notify and wait
         this.notifyTurn(currentPlayerIndex);
         await this.waitForAction(currentPlayerIndex);
       }
@@ -149,6 +153,28 @@ export class GameRunner {
     this.applyAction(seatIndex, decision.action);
   }
 
+  /** Execute an agent turn via LLM/webhook, falling back to heuristic AI on failure. */
+  private async doAgentTurn(seatIndex: number): Promise<void> {
+    const actions = getValidActions(this.state, seatIndex);
+    if (actions.length === 0) return;
+
+    const config = this.room.seats[seatIndex].agentConfig;
+    if (!config) {
+      // No config — shouldn't happen, fall back to AI
+      console.warn(`[GameRunner] Agent seat ${seatIndex} has no agentConfig, falling back to AI`);
+      await this.doAITurn(seatIndex);
+      return;
+    }
+
+    try {
+      const action = await handleAgentTurn(this.state, seatIndex, actions, config);
+      this.applyAction(seatIndex, action);
+    } catch (err) {
+      console.warn(`[GameRunner] Agent turn failed for seat ${seatIndex}, falling back to AI:`, err);
+      await this.doAITurn(seatIndex);
+    }
+  }
+
   /**
    * Collect claims during claim window.
    * AI claims instantly; human/agent players have CLAIM_TIMEOUT_MS.
@@ -172,7 +198,31 @@ export class GameRunner {
       }
     }
 
-    // Notify active human/agent players who can claim
+    // Collect agent claims via LLM/webhook (server-side, like AI)
+    for (let i = 0; i < 4; i++) {
+      if (i === lastDiscardPlayer) continue;
+      if (this.room.seats[i].type === 'agent') {
+        const actions = getValidActions(this.state, i);
+        if (actions.length > 0 && actions.some(a => a.type !== 'pass')) {
+          try {
+            const config = this.room.seats[i].agentConfig!;
+            const action = await handleAgentTurn(this.state, i, actions, config);
+            if (action.type !== 'pass') {
+              this.pendingClaims.set(i, action);
+            }
+          } catch (err) {
+            console.warn(`[GameRunner] Agent claim failed for seat ${i}, falling back to AI:`, err);
+            // Fall back to heuristic AI for the claim decision
+            const decision = await getAIDecision(this.state, i, actions);
+            if (decision.action.type !== 'pass') {
+              this.pendingClaims.set(i, decision.action);
+            }
+          }
+        }
+      }
+    }
+
+    // Notify active human players who can claim
     const humanClaimers: number[] = [];
     for (let i = 0; i < 4; i++) {
       if (i === lastDiscardPlayer) continue;

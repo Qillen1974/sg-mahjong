@@ -9,8 +9,9 @@
 
 import { v4 as uuidv4 } from 'uuid';
 import { MAX_ROOMS } from './config.js';
+import type { AgentConfig } from './agent-webhook.js';
 
-export type SeatType = 'human' | 'ai-standby' | 'empty';
+export type SeatType = 'human' | 'ai-standby' | 'agent' | 'empty';
 export type RoomStatus = 'waiting' | 'playing' | 'finished';
 
 export interface RoomSettings {
@@ -29,6 +30,8 @@ export interface Seat {
   type: SeatType;
   /** Display name chosen by the player. */
   playerName: string | null;
+  /** LLM/webhook config — only for type === 'agent'. */
+  agentConfig?: AgentConfig;
 }
 
 export interface Room {
@@ -99,6 +102,7 @@ export function listRooms(): Room[] {
 export function joinRoom(
   roomId: string,
   playerName: string = 'Player',
+  agentConfig?: AgentConfig,
 ): { room: Room; seatIndex: number } {
   const room = rooms.get(roomId);
   if (!room) throw new Error('Room not found');
@@ -107,7 +111,11 @@ export function joinRoom(
   const seatIndex = room.seats.findIndex(s => s.type === 'empty');
   if (seatIndex === -1) throw new Error('Room is full');
 
-  room.seats[seatIndex] = { type: 'human', playerName };
+  if (agentConfig) {
+    room.seats[seatIndex] = { type: 'agent', playerName, agentConfig };
+  } else {
+    room.seats[seatIndex] = { type: 'human', playerName };
+  }
   return { room, seatIndex };
 }
 
@@ -136,9 +144,9 @@ export function startRoom(roomId: string, requestingSeatIndex: number): Room {
   if (room.status !== 'waiting') throw new Error('Room already started');
   if (requestingSeatIndex !== room.hostSeatIndex) throw new Error('Only the host can start');
 
-  // Must have at least 1 human player
-  const humanCount = room.seats.filter(s => s.type === 'human').length;
-  if (humanCount === 0) throw new Error('Need at least one player');
+  // Must have at least 1 human or agent player
+  const playerCount = room.seats.filter(s => s.type === 'human' || s.type === 'agent').length;
+  if (playerCount === 0) throw new Error('Need at least one player');
 
   // Fill empty seats with AI standby
   for (let i = 0; i < 4; i++) {
