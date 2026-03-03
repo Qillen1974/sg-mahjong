@@ -96,7 +96,6 @@ async function callLLM(
         model: llm.model,
         messages,
         temperature: llm.temperature ?? 0.3,
-        max_tokens: 512,
       }),
       signal: controller.signal,
     });
@@ -110,8 +109,18 @@ async function callLLM(
       choices?: Array<{ message?: { content?: string } }>;
     };
 
-    const content = data.choices?.[0]?.message?.content;
-    if (!content) return null;
+    const rawContent = data.choices?.[0]?.message?.content;
+    if (!rawContent) {
+      console.warn('[AgentTurn] LLM returned empty content');
+      return null;
+    }
+
+    // Strip <think>...</think> blocks (MiniMax M2.1 chain-of-thought)
+    const content = rawContent.replace(/<think>[\s\S]*?<\/think>/g, '').trim();
+    if (!content) {
+      console.warn(`[AgentTurn] LLM response was only <think> block (${rawContent.length} chars)`);
+      return null;
+    }
 
     return parseActionFromLLM(content, validActions);
   } finally {
