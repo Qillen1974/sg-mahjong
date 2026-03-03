@@ -353,9 +353,11 @@ export class GameRunner {
    * Validates and applies it.
    */
   submitAction(seatIndex: number, action: PlayerAction): { ok: boolean; error?: string } {
+    console.log(`[GameRunner] submitAction: seat=${seatIndex}, action=${action.type}, phase=${this.state.phase}, currentPlayer=${this.state.currentPlayerIndex}`);
     // Validate it's this player's turn (or claim window)
     const validActions = getValidActions(this.state, seatIndex);
     if (validActions.length === 0) {
+      console.log(`[GameRunner] submitAction REJECTED: no valid actions for seat ${seatIndex}`);
       return { ok: false, error: 'No valid actions for you right now' };
     }
 

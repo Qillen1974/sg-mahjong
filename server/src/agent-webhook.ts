@@ -96,7 +96,7 @@ async function callLLM(
         model: llm.model,
         messages,
         temperature: llm.temperature ?? 0.3,
-        max_tokens: 100,
+        max_tokens: 512,
       }),
       signal: controller.signal,
     });

@@ -172,19 +172,25 @@ export class NetworkBridge {
 
   private sendAction(action: PlayerAction): void {
     this.validActions = []; // Clear until next turnNotify
-    if (this.ws?.readyState === WebSocket.OPEN) {
-      this.send({ type: 'action', action });
-    } else {
-      // Fallback: send action via HTTP
-      fetch(`${this.serverUrl}/api/rooms/${this.roomId}/action`, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${this.token}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ action }),
-      }).catch(err => console.error('HTTP action failed:', err));
-    }
+    // Always use HTTP for actions — more reliable than WebSocket.
+    // WebSocket connections can silently drop, causing lost actions.
+    console.log(`[action] Sending ${action.type} via HTTP`);
+    fetch(`${this.serverUrl}/api/rooms/${this.roomId}/action`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${this.token}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ action }),
+    })
+      .then(res => {
+        if (!res.ok) {
+          res.json().then(data => console.error('[action] Server rejected:', data.error));
+        } else {
+          console.log(`[action] ${action.type} accepted`);
+        }
+      })
+      .catch(err => console.error('[action] HTTP failed:', err));
   }
 
   async discard(tile: Tile): Promise<void> {
