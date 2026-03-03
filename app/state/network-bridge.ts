@@ -8,6 +8,7 @@
 
 import type { PlayerAction, GameEvent, GameState } from '@lib/game-types';
 import type { Tile } from '@lib/tiles';
+import { tileKey } from '@lib/tiles';
 import type { FilteredGameState } from '../../server/src/state-filter';
 
 export type NetworkUpdateCallback = (state: FilteredGameState) => void;
@@ -16,6 +17,26 @@ export type BubbleCallback = (playerIndex: number, text: string) => void;
 interface WSMessage {
   type: string;
   data: unknown;
+}
+
+/** Map tile keys to short Chinese names for speech bubbles. */
+const CHINESE_NAMES: Record<string, string> = {
+  characters_1: '一萬', characters_2: '二萬', characters_3: '三萬',
+  characters_4: '四萬', characters_5: '五萬', characters_6: '六萬',
+  characters_7: '七萬', characters_8: '八萬', characters_9: '九萬',
+  dots_1: '一筒', dots_2: '二筒', dots_3: '三筒',
+  dots_4: '四筒', dots_5: '五筒', dots_6: '六筒',
+  dots_7: '七筒', dots_8: '八筒', dots_9: '九筒',
+  bamboo_1: '一條', bamboo_2: '二條', bamboo_3: '三條',
+  bamboo_4: '四條', bamboo_5: '五條', bamboo_6: '六條',
+  bamboo_7: '七條', bamboo_8: '八條', bamboo_9: '九條',
+  winds_east: '東', winds_south: '南', winds_west: '西', winds_north: '北',
+  dragons_red: '中', dragons_green: '發', dragons_white: '白',
+};
+
+function tileChinese(tile: Tile | null | undefined): string {
+  if (!tile) return '';
+  return CHINESE_NAMES[tileKey(tile)] ?? tile.name;
 }
 
 export class NetworkBridge {
@@ -124,13 +145,17 @@ export class NetworkBridge {
   private emitBubble(event: GameEvent): void {
     switch (event.type) {
       case 'tileDiscarded':
-        this.onBubble(event.playerIndex, event.tile?.name ?? '');
+        this.onBubble(event.playerIndex, tileChinese(event.tile));
         break;
       case 'meldDeclared': {
         const labels: Record<string, string> = {
           pung: 'Pong!', chow: 'Chow!', kong: 'Kong!',
         };
-        this.onBubble(event.playerIndex, labels[event.meld.type] ?? 'Meld!');
+        const label = labels[event.meld.type] ?? 'Meld!';
+        // Show the claimed tile in the bubble
+        const claimedTile = event.meld.tiles?.[0];
+        const tileStr = claimedTile ? ` ${tileChinese(claimedTile)}` : '';
+        this.onBubble(event.playerIndex, `${label}${tileStr}`);
         break;
       }
       case 'gameOver':

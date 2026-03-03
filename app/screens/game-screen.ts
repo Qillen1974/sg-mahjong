@@ -1,6 +1,7 @@
 import type { ScreenContext } from '../main';
 import type { GameState, PlayerAction, SessionConfig, GameResult } from '@lib/game-types';
 import type { Tile } from '@lib/tiles';
+import { tileKey } from '@lib/tiles';
 import { canChow } from '@lib/game';
 import { GameBridge } from '../state/game-bridge';
 import { NetworkBridge } from '../state/network-bridge';
@@ -42,6 +43,25 @@ export function renderGameScreen(ctx: ScreenContext): HTMLElement {
   let playerNames: string[] | undefined;
   /** Previous state snapshot for detecting changes in online mode (for bubbles). */
   let prevOnlineState: any = null;
+
+  /** Chinese tile names for online mode bubbles. */
+  const CN: Record<string, string> = {
+    characters_1: '一萬', characters_2: '二萬', characters_3: '三萬',
+    characters_4: '四萬', characters_5: '五萬', characters_6: '六萬',
+    characters_7: '七萬', characters_8: '八萬', characters_9: '九萬',
+    dots_1: '一筒', dots_2: '二筒', dots_3: '三筒',
+    dots_4: '四筒', dots_5: '五筒', dots_6: '六筒',
+    dots_7: '七筒', dots_8: '八筒', dots_9: '九筒',
+    bamboo_1: '一條', bamboo_2: '二條', bamboo_3: '三條',
+    bamboo_4: '四條', bamboo_5: '五條', bamboo_6: '六條',
+    bamboo_7: '七條', bamboo_8: '八條', bamboo_9: '九條',
+    winds_east: '東', winds_south: '南', winds_west: '西', winds_north: '北',
+    dragons_red: '中', dragons_green: '發', dragons_white: '白',
+  };
+  function cnTile(tile: any): string {
+    if (!tile) return '';
+    return CN[tileKey(tile)] ?? tile.name ?? `${tile.suit} ${tile.value}`;
+  }
 
   // Persistent bubble overlay — not destroyed by render()
   const bubbleOverlay = document.createElement('div');
@@ -118,8 +138,7 @@ export function renderGameScreen(ctx: ScreenContext): HTMLElement {
     if (curr.lastDiscard && curr.lastDiscardPlayerIndex !== null && curr.lastDiscardPlayerIndex !== undefined) {
       const discardId = curr.lastDiscard.id ?? '';
       if (discardId !== prevLastDiscardId) {
-        const tile = curr.lastDiscard;
-        const tileName = tile.name ?? `${tile.suit} ${tile.value}`;
+        const tileName = cnTile(curr.lastDiscard);
         console.log(`[bubble] Player ${curr.lastDiscardPlayerIndex} discarded: ${tileName} (turn ${currTurn})`);
         showBubble(curr.lastDiscardPlayerIndex, tileName);
         prevLastDiscardId = discardId;
@@ -137,8 +156,10 @@ export function renderGameScreen(ctx: ScreenContext): HTMLElement {
           pung: 'Pong!', chow: 'Chow!', kong: 'Kong!',
         };
         const label = labels[newMeld.type] ?? 'Meld!';
-        console.log(`[bubble] Player ${i}: ${label}`);
-        showBubble(i, label);
+        const claimedTile = newMeld.tiles?.[0];
+        const tileStr = claimedTile ? ` ${cnTile(claimedTile)}` : '';
+        console.log(`[bubble] Player ${i}: ${label}${tileStr}`);
+        showBubble(i, `${label}${tileStr}`);
       }
       prevMeldCounts[i] = currMeldLen;
     }
@@ -527,8 +548,8 @@ export function renderGameScreen(ctx: ScreenContext): HTMLElement {
 
     // Initial poll
     poll();
-    // Continue polling every 2s
-    gamePoller = setInterval(poll, 2000);
+    // Continue polling every 1s for responsive bubbles
+    gamePoller = setInterval(poll, 1000);
   }
 
   /** Stop game polling (called when leaving the screen). */
