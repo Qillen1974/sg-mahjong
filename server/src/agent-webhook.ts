@@ -95,7 +95,8 @@ async function callLLM(
       body: JSON.stringify({
         model: llm.model,
         messages,
-        temperature: llm.temperature ?? 0.7,
+        temperature: llm.temperature ?? 0.3,
+        max_tokens: 100,
       }),
       signal: controller.signal,
     });
