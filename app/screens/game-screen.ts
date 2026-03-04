@@ -193,14 +193,13 @@ export function renderGameScreen(ctx: ScreenContext): HTMLElement {
       if (!state) return;
     }
 
-    // Clear everything and ensure bubble overlay exists
+    // Clear everything and re-attach bubble overlay
     screen.innerHTML = '';
-    if (!bubbleOverlay.parentNode) {
-      // Overlay was destroyed (e.g. by showWaitingRoom) — re-create it
-      bubbleOverlay = document.createElement('div');
-      bubbleOverlay.className = 'bubble-overlay';
-    }
+    bubbleOverlay = document.createElement('div');
+    bubbleOverlay.className = 'bubble-overlay';
     screen.appendChild(bubbleOverlay);
+    // Re-render any active bubbles into the fresh overlay
+    renderBubbles();
 
     if (state.phase === 'roundOver') {
       if (!isOnline) {
