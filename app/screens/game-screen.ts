@@ -109,6 +109,7 @@ export function renderGameScreen(ctx: ScreenContext): HTMLElement {
 
   /** Show a bubble for a player. */
   function showBubble(playerIndex: number, text: string) {
+    console.log(`[bubble] showBubble called: player=${playerIndex}, text="${text}", overlay.parentNode=${!!bubbleOverlay.parentNode}`);
     const existing = bubbleTimers.get(playerIndex);
     if (existing) clearTimeout(existing);
     bubbles.set(playerIndex, text);
@@ -133,6 +134,7 @@ export function renderGameScreen(ctx: ScreenContext): HTMLElement {
     if (!curr || !curr.players) return;
 
     const currTurn = curr.turnNumber ?? 0;
+    console.log(`[bubble-detect] turn=${currTurn}, lastDiscard=${curr.lastDiscard?.id?.slice(0,8) ?? 'none'}, prevDiscard=${prevLastDiscardId?.slice(0,8) ?? 'none'}, phase=${curr.phase}`);
 
     // Detect new discard via lastDiscard changing
     if (curr.lastDiscard && curr.lastDiscardPlayerIndex !== null && curr.lastDiscardPlayerIndex !== undefined) {
@@ -239,6 +241,12 @@ export function renderGameScreen(ctx: ScreenContext): HTMLElement {
       screen.appendChild(renderChowPicker(chowOptions));
       return;
     }
+
+    // Version indicator (remove after debugging)
+    const ver = document.createElement('div');
+    ver.style.cssText = 'position:fixed;bottom:2px;right:4px;font-size:9px;opacity:0.4;z-index:200;color:white';
+    ver.textContent = 'v4';
+    screen.appendChild(ver);
 
     const board = createGameBoard({
       state,
