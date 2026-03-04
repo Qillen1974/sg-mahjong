@@ -177,11 +177,12 @@ router.post('/rooms/:id/start', requireAuth, (req: Request, res: Response) => {
     // Start the game loop asynchronously
     runner.run().then(() => {
       finishRoom(roomId);
-      unregisterGameRunner(roomId);
+      // Keep runner registered for 60s so clients can poll the final roundOver state
+      setTimeout(() => unregisterGameRunner(roomId), 60_000);
     }).catch(err => {
       console.error(`Game error in room ${roomId}:`, err);
       finishRoom(roomId);
-      unregisterGameRunner(roomId);
+      setTimeout(() => unregisterGameRunner(roomId), 60_000);
     });
 
     res.json({ ok: true, room: sanitizeRoom(room) });

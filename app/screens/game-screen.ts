@@ -519,14 +519,7 @@ export function renderGameScreen(ctx: ScreenContext): HTMLElement {
 
     async function poll() {
       try {
-        const res = await fetch(`${serverUrl}/api/rooms/${roomId}/state?format=agent`, {
-          headers: { 'Authorization': `Bearer ${token}` },
-        });
-        if (!res.ok) return;
-        const agentState = await res.json();
-        if (!agentState || !agentState.yourHandTiles) return;
-
-        // Also fetch filtered state for full board rendering
+        // Fetch filtered state for board rendering
         const stateRes = await fetch(`${serverUrl}/api/rooms/${roomId}/state`, {
           headers: { 'Authorization': `Bearer ${token}` },
         });
@@ -534,13 +527,25 @@ export function renderGameScreen(ctx: ScreenContext): HTMLElement {
         const filteredState = await stateRes.json();
         if (!filteredState || !filteredState.players) return;
 
+        // Fetch agent state for valid actions (skip if game is over)
+        let validActions: PlayerAction[] = [];
+        if (filteredState.phase !== 'roundOver') {
+          const res = await fetch(`${serverUrl}/api/rooms/${roomId}/state?format=agent`, {
+            headers: { 'Authorization': `Bearer ${token}` },
+          });
+          if (res.ok) {
+            const agentState = await res.json();
+            validActions = agentState?.validActions || [];
+          }
+        }
+
         if (networkBridge) {
           // Detect changes for speech bubbles before updating state
           detectBubblesFromStateChange(prevOnlineState, filteredState);
           prevOnlineState = JSON.parse(JSON.stringify(filteredState));
 
           networkBridge.state = filteredState;
-          networkBridge.validActions = agentState.validActions || [];
+          networkBridge.validActions = validActions;
           render();
         }
       } catch { /* ignore */ }
