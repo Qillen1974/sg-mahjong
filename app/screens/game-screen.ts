@@ -63,8 +63,8 @@ export function renderGameScreen(ctx: ScreenContext): HTMLElement {
     return CN[tileKey(tile)] ?? tile.name ?? `${tile.suit} ${tile.value}`;
   }
 
-  // Persistent bubble overlay — not destroyed by render()
-  const bubbleOverlay = document.createElement('div');
+  // Persistent bubble overlay — re-created if destroyed by showWaitingRoom()
+  let bubbleOverlay = document.createElement('div');
   bubbleOverlay.className = 'bubble-overlay';
   screen.appendChild(bubbleOverlay);
 
@@ -191,10 +191,14 @@ export function renderGameScreen(ctx: ScreenContext): HTMLElement {
       if (!state) return;
     }
 
-    // Clear everything except the bubble overlay
-    const overlay = screen.querySelector('.bubble-overlay');
+    // Clear everything and ensure bubble overlay exists
     screen.innerHTML = '';
-    if (overlay) screen.appendChild(overlay);
+    if (!bubbleOverlay.parentNode) {
+      // Overlay was destroyed (e.g. by showWaitingRoom) — re-create it
+      bubbleOverlay = document.createElement('div');
+      bubbleOverlay.className = 'bubble-overlay';
+    }
+    screen.appendChild(bubbleOverlay);
 
     if (state.phase === 'roundOver') {
       if (!isOnline) {
