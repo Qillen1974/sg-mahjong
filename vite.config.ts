@@ -4,6 +4,7 @@ import path from 'path';
 
 export default defineConfig({
   root: 'app',
+  envDir: path.resolve(__dirname),
   resolve: {
     alias: {
       '@lib': path.resolve(__dirname, 'src'),
