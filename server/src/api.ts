@@ -387,6 +387,146 @@ router.get('/rooms/:id/events', requireAuth, (req: Request, res: Response) => {
 });
 
 // ---------------------------------------------------------------------------
+// AI Proxy (keeps API key server-side only)
+// ---------------------------------------------------------------------------
+
+const LLM_API_URL = 'https://coding-intl.dashscope.aliyuncs.com/v1/chat/completions';
+const LLM_MODEL = 'qwen3-coder-plus';
+const LLM_API_KEY = process.env.LLM_API_KEY || '';
+
+/** POST /api/ai-decision — Proxy AI decision through server to keep API key safe. */
+router.post('/ai-decision', async (req: Request, res: Response) => {
+  if (!LLM_API_KEY) {
+    res.status(503).json({ error: 'LLM API key not configured' });
+    return;
+  }
+
+  const { state, playerIndex, validActions } = req.body ?? {};
+  if (!state || playerIndex === undefined || !validActions) {
+    res.status(400).json({ error: 'Missing state, playerIndex, or validActions' });
+    return;
+  }
+
+  try {
+    // Import buildPrompt logic inline — build the same prompt the client would
+    const player = state.players[playerIndex];
+    const handStr = player.handTiles.map((t: any) => t.name).join(', ');
+    const meldsStr = player.openMelds.length > 0
+      ? player.openMelds.map((m: any) =>
+          `${m.type}(${m.concealed ? 'concealed' : 'open'}): ${m.tiles.map((t: any) => t.name).join(', ')}`
+        ).join('; ')
+      : 'None';
+    const bonusStr = player.bonusTiles.length > 0
+      ? player.bonusTiles.map((t: any) => t.name).join(', ')
+      : 'None';
+    const discardsStr = state.players.map((p: any, i: number) => {
+      const discards = p.discards.map((t: any) => t.name).join(', ');
+      return `Player ${i} (${p.seat}): ${discards || 'none'}`;
+    }).join('\n');
+    const actionsStr = validActions.map((a: any, i: number) => {
+      switch (a.type) {
+        case 'discard': return `${i}: Discard ${a.tile.name}`;
+        case 'declareKong': return `${i}: Declare concealed kong (${a.tiles.map((t: any) => t.name).join(', ')})`;
+        case 'promotePungToKong': return `${i}: Promote pung to kong (${a.tile.name})`;
+        case 'declareSelfWin': return `${i}: Declare self-drawn win (zi mo)`;
+        case 'claimPong': return `${i}: Claim pong`;
+        case 'claimChow': return `${i}: Claim chow (${a.chowTiles.map((t: any) => t.name).join(', ')})`;
+        case 'claimKong': return `${i}: Claim kong`;
+        case 'claimWin': return `${i}: Claim win`;
+        case 'pass': return `${i}: Pass`;
+      }
+    }).join('\n');
+
+    const messages = [
+      {
+        role: 'system',
+        content: `You are a Singapore Mahjong AI player with a fun, competitive personality. You love to trash talk in Singlish/Singapore style.
+
+Respond with ONLY a JSON object: {"action": <number>, "reasoning": "<brief explanation>", "trashtalk": "<short witty remark>"}
+
+Rules for trashtalk:
+- Keep it short (under 15 words), playful and funny
+- Use Singlish flavour (lah, lor, wah, siao, alamak, etc.)
+- React to the actual game situation (what you're discarding, claiming, or what opponents did)
+- Sometimes taunt, sometimes bluff, sometimes be dramatic
+- About 50% of the time, set trashtalk to null (don't overdo it)
+
+The action number corresponds to one of the valid actions listed.`,
+      },
+      {
+        role: 'user',
+        content: `You are Player ${playerIndex} (${player.seat} wind).
+Prevailing wind: ${state.prevailingWind}
+Tiles remaining in wall: ${state.wall.length}
+
+Your hand: ${handStr}
+Your open melds: ${meldsStr}
+Your bonus tiles: ${bonusStr}
+
+Discards by all players:
+${discardsStr}
+
+Valid actions:
+${actionsStr}
+
+Choose the best action.`,
+      },
+    ];
+
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 10_000);
+
+    const llmRes = await fetch(LLM_API_URL, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${LLM_API_KEY}`,
+      },
+      body: JSON.stringify({ model: LLM_MODEL, messages, temperature: 0.3 }),
+      signal: controller.signal,
+    });
+    clearTimeout(timer);
+
+    if (!llmRes.ok) {
+      res.status(502).json({ error: 'LLM API error' });
+      return;
+    }
+
+    const data = await llmRes.json() as { choices?: Array<{ message?: { content?: string } }> };
+    const content = data.choices?.[0]?.message?.content;
+    if (!content) {
+      res.status(502).json({ error: 'Empty LLM response' });
+      return;
+    }
+
+    // Strip <think> blocks
+    const cleaned = content.replace(/<think>[\s\S]*?<\/think>/g, '').trim();
+    const jsonMatch = cleaned.match(/\{[\s\S]*\}/);
+    if (!jsonMatch) {
+      res.status(502).json({ error: 'Could not parse LLM response' });
+      return;
+    }
+
+    const parsed = JSON.parse(jsonMatch[0]);
+    const actionIndex = parseInt(parsed.action, 10);
+
+    if (isNaN(actionIndex) || actionIndex < 0 || actionIndex >= validActions.length) {
+      res.status(502).json({ error: 'Invalid action index from LLM' });
+      return;
+    }
+
+    res.json({
+      actionIndex,
+      reasoning: parsed.reasoning || null,
+      trashtalk: parsed.trashtalk || null,
+    });
+  } catch (e: any) {
+    console.error('[AI Proxy] Error:', e.message);
+    res.status(502).json({ error: 'AI proxy failed' });
+  }
+});
+
+// ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
 

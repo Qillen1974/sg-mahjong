@@ -60,19 +60,22 @@ export async function getAIDecision(
     return { action: validActions[0], reasoning: 'Only one option' };
   }
 
-  // Try LLM API — check Vite env (browser) then Node env (tests)
-  const apiKey =
-    import.meta.env.VITE_LLM_API_KEY ||
-    (typeof process !== 'undefined' && process.env?.LLM_API_KEY) ||
-    undefined;
-  if (apiKey) {
-    try {
-      const apiResult = await callLLMAPI(state, playerIndex, validActions, apiKey);
-      if (apiResult) return apiResult;
-      console.warn(`[AI] LLM returned no usable result for player ${playerIndex}, using fallback`);
-    } catch (e) {
-      console.warn(`[AI] LLM API error for player ${playerIndex}:`, e);
-    }
+  // In browser: proxy through game server. On server: call LLM directly.
+  const isBrowser = typeof window !== 'undefined';
+  const apiKey = !isBrowser
+    ? (typeof process !== 'undefined' && process.env?.LLM_API_KEY) || undefined
+    : undefined;
+
+  try {
+    const apiResult = isBrowser
+      ? await callServerProxy(state, playerIndex, validActions)
+      : apiKey
+        ? await callLLMAPI(state, playerIndex, validActions, apiKey)
+        : null;
+    if (apiResult) return apiResult;
+    console.warn(`[AI] LLM returned no usable result for player ${playerIndex}, using fallback`);
+  } catch (e) {
+    console.warn(`[AI] LLM API error for player ${playerIndex}:`, e);
   }
 
   // Fallback to rule-based strategy
@@ -189,6 +192,38 @@ async function callLLMAPI(
     if (!content) return null;
 
     return parseAPIResponse(content, validActions);
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+async function callServerProxy(
+  state: GameState,
+  playerIndex: number,
+  validActions: PlayerAction[],
+): Promise<AIDecision | null> {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), API_TIMEOUT_MS);
+
+  try {
+    const response = await fetch('/api/ai-decision', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ state, playerIndex, validActions }),
+      signal: controller.signal,
+    });
+
+    if (!response.ok) return null;
+
+    const data = await response.json();
+    if (typeof data.actionIndex !== 'number') return null;
+    if (data.actionIndex < 0 || data.actionIndex >= validActions.length) return null;
+
+    return {
+      action: validActions[data.actionIndex],
+      reasoning: data.reasoning || 'LLM API decision',
+      trashtalk: data.trashtalk || undefined,
+    };
   } finally {
     clearTimeout(timeout);
   }
