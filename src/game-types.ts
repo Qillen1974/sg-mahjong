@@ -115,7 +115,8 @@ export type GameEvent =
   | { type: 'kongReplacement'; playerIndex: number; tile: Tile }
   | { type: 'claimWindowOpen'; discard: Tile; discardedBy: number }
   | { type: 'turnChanged'; playerIndex: number; phase: TurnPhase }
-  | { type: 'gameOver'; result: GameResult };
+  | { type: 'gameOver'; result: GameResult }
+  | { type: 'playerMessage'; playerIndex: number; message: string };
 
 export type EventListener = (event: GameEvent) => void;
 

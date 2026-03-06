@@ -44,6 +44,7 @@ export class NetworkBridge {
   validActions: PlayerAction[] = [];
   onUpdate: NetworkUpdateCallback = () => {};
   onBubble: BubbleCallback = () => {};
+  onPlayerMessage: BubbleCallback = () => {};
 
   private ws: WebSocket | null = null;
   private serverUrl: string;
@@ -162,6 +163,9 @@ export class NetworkBridge {
         if (event.result.type === 'win' && event.result.winnerIndex !== undefined) {
           this.onBubble(event.result.winnerIndex, 'Hu!');
         }
+        break;
+      case 'playerMessage':
+        this.onPlayerMessage(event.playerIndex, event.message);
         break;
     }
   }

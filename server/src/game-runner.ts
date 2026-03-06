@@ -24,12 +24,13 @@ import {
 } from '../../src/game';
 import { getAIDecision } from '../../src/ai';
 import type { GameState, GameEvent, PlayerAction, PlayerType } from '../../src/game-types';
-import type { Tile } from '../../src/tiles';
+import type { Tile, Wind } from '../../src/tiles';
 import { tilesMatch } from '../../src/tiles';
 import { filterStateForPlayer, filterEventForPlayer } from './state-filter.js';
-import { CLAIM_TIMEOUT_MS, TURN_TIMEOUT_MS } from './config.js';
+import { CLAIM_TIMEOUT_MS } from './config.js';
 import type { Room } from './room-manager.js';
 import { handleAgentTurn } from './agent-webhook.js';
+import { getTrashTalk } from '../../src/trash-talk';
 
 export type BroadcastFn = (seatIndex: number, type: string, data: unknown) => void;
 
@@ -44,8 +45,11 @@ export class GameRunner {
   /** Track consecutive timeouts per seat — auto-promote to AI after threshold. */
   private timeoutCount: [number, number, number, number] = [0, 0, 0, 0];
   private static readonly AUTO_AI_THRESHOLD = 2;
+  /** Recent player messages (trash talk) — for HTTP polling clients to pick up. */
+  private _recentMessages: Array<{ playerIndex: number; message: string; ts: number }> = [];
+  private static readonly MESSAGE_TTL_MS = 5000;
 
-  constructor(room: Room, broadcast: BroadcastFn) {
+  constructor(room: Room, broadcast: BroadcastFn, dealerIndex?: number, prevailingWind?: Wind) {
     this.room = room;
     this.broadcast = broadcast;
 
@@ -55,7 +59,7 @@ export class GameRunner {
       s => (s.type === 'ai-standby' ? 'ai' : 'human'),
     ) as [PlayerType, PlayerType, PlayerType, PlayerType];
 
-    this.state = createGame(playerTypes);
+    this.state = createGame(playerTypes, prevailingWind ?? 'east', dealerIndex ?? 0);
     this.broadcastState();
     this.broadcastAllEvent({ type: 'gameStarted', state: this.state });
   }
@@ -64,7 +68,7 @@ export class GameRunner {
   private broadcastState(): void {
     for (let i = 0; i < 4; i++) {
       if (this.room.seats[i].type === 'human' || this.room.seats[i].type === 'agent') {
-        this.broadcast(i, 'gameState', filterStateForPlayer(this.state, i));
+        this.broadcast(i, 'gameState', filterStateForPlayer(this.state, i, this.room.sessionState));
       }
     }
   }
@@ -119,12 +123,13 @@ export class GameRunner {
     }
 
     if (phase === 'postDraw' || phase === 'discard') {
-      if (seatType === 'ai-standby' || this.isAutoAI(currentPlayerIndex)) {
+      if (seatType === 'ai-standby') {
         await this.doAITurn(currentPlayerIndex);
       } else if (seatType === 'agent') {
         await this.doAgentTurn(currentPlayerIndex);
       } else {
-        // Human — notify and wait
+        // Human (or auto-AI promoted human) — notify and wait.
+        // Even auto-AI seats get notified so the player can reclaim by acting.
         this.notifyTurn(currentPlayerIndex);
         await this.waitForAction(currentPlayerIndex);
       }
@@ -144,6 +149,37 @@ export class GameRunner {
     return this.timeoutCount[seatIndex] >= GameRunner.AUTO_AI_THRESHOLD;
   }
 
+  /** Broadcast a trash talk speech bubble for a player. */
+  private emitTrashTalk(seatIndex: number, message: string): void {
+    this.broadcastAllEvent({ type: 'playerMessage', playerIndex: seatIndex, message });
+    // Store for HTTP polling clients
+    this._recentMessages.push({ playerIndex: seatIndex, message, ts: Date.now() });
+    // Prune old messages
+    const cutoff = Date.now() - GameRunner.MESSAGE_TTL_MS;
+    this._recentMessages = this._recentMessages.filter(m => m.ts > cutoff);
+  }
+
+  /** Get recent player messages (for HTTP polling). Clears returned messages. */
+  getRecentMessages(): Array<{ playerIndex: number; message: string }> {
+    const cutoff = Date.now() - GameRunner.MESSAGE_TTL_MS;
+    this._recentMessages = this._recentMessages.filter(m => m.ts > cutoff);
+    const msgs = this._recentMessages.map(({ playerIndex, message }) => ({ playerIndex, message }));
+    return msgs;
+  }
+
+  /** Map a PlayerAction type to a trash talk context key. */
+  private actionToTrashTalkContext(action: PlayerAction): string {
+    switch (action.type) {
+      case 'discard': return 'discard';
+      case 'claimPong': return 'pong';
+      case 'claimChow': return 'chow';
+      case 'claimKong': case 'declareKong': case 'promotePungToKong': return 'kong';
+      case 'claimWin': return 'win';
+      case 'declareSelfWin': return 'selfWin';
+      default: return '';
+    }
+  }
+
   /** Execute AI turn for an ai-standby seat. */
   private async doAITurn(seatIndex: number): Promise<void> {
     const actions = getValidActions(this.state, seatIndex);
@@ -151,6 +187,12 @@ export class GameRunner {
 
     const decision = await getAIDecision(this.state, seatIndex, actions);
     this.applyAction(seatIndex, decision.action);
+
+    const context = this.actionToTrashTalkContext(decision.action);
+    if (context) {
+      const talk = getTrashTalk(context);
+      if (talk) this.emitTrashTalk(seatIndex, talk);
+    }
   }
 
   /** Execute an agent turn via LLM/webhook, falling back to heuristic AI on failure. */
@@ -167,8 +209,19 @@ export class GameRunner {
     }
 
     try {
-      const action = await handleAgentTurn(this.state, seatIndex, actions, config);
-      this.applyAction(seatIndex, action);
+      const result = await handleAgentTurn(this.state, seatIndex, actions, config);
+      this.applyAction(seatIndex, result.action);
+
+      // Use LLM trash talk if provided, otherwise fall back to canned phrases
+      if (result.trashTalk) {
+        this.emitTrashTalk(seatIndex, result.trashTalk);
+      } else {
+        const context = this.actionToTrashTalkContext(result.action);
+        if (context) {
+          const talk = getTrashTalk(context);
+          if (talk) this.emitTrashTalk(seatIndex, talk);
+        }
+      }
     } catch (err) {
       console.warn(`[GameRunner] Agent turn failed for seat ${seatIndex}, falling back to AI:`, err);
       await this.doAITurn(seatIndex);
@@ -311,6 +364,9 @@ export class GameRunner {
     }
   }
 
+  /** Grace period for auto-AI seats — shorter wait so human can reclaim. */
+  private static readonly AUTO_AI_GRACE_MS = 5000;
+
   /** Wait for a human/agent player to submit an action. */
   private waitForAction(seatIndex: number): Promise<void> {
     return new Promise<void>(resolve => {
@@ -318,10 +374,18 @@ export class GameRunner {
       this._actionResolve = resolve;
       this._actionSeat = seatIndex;
 
+      // Auto-AI seats get a shorter grace period to reclaim
+      // Normal seats use the configured turn timeout
+      const baseTimeout = this.room.settings.turnTimeout * 1000;
+      const timeout = this.isAutoAI(seatIndex) ? GameRunner.AUTO_AI_GRACE_MS : baseTimeout;
+      if (timeout <= 0) return;
+
       this.turnTimer = setTimeout(async () => {
-        this.timeoutCount[seatIndex]++;
+        if (!this.isAutoAI(seatIndex)) {
+          this.timeoutCount[seatIndex]++;
+        }
         const isNowAutoAI = this.isAutoAI(seatIndex);
-        console.log(`[GameRunner] Turn timeout for seat ${seatIndex} (count=${this.timeoutCount[seatIndex]}${isNowAutoAI ? ', now auto-AI' : ''}) — auto-playing with AI`);
+        console.log(`[GameRunner] Turn timeout for seat ${seatIndex} (count=${this.timeoutCount[seatIndex]}${isNowAutoAI ? ', auto-AI' : ''}) — auto-playing with AI`);
         // Use AI decision as fallback when player doesn't respond
         try {
           const actions = getValidActions(this.state, seatIndex);
@@ -341,7 +405,7 @@ export class GameRunner {
           }
         }
         resolve();
-      }, TURN_TIMEOUT_MS);
+      }, timeout);
     });
   }
 
@@ -502,7 +566,7 @@ export class GameRunner {
 
   /** Get filtered state for a specific seat. */
   getStateForPlayer(seatIndex: number) {
-    return filterStateForPlayer(this.state, seatIndex);
+    return filterStateForPlayer(this.state, seatIndex, this.room.sessionState);
   }
 
   /** Clean up timers on room destruction. */

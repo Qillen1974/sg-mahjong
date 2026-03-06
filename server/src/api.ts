@@ -16,6 +16,7 @@ import {
   finishRoom,
 } from './room-manager.js';
 import { GameRunner } from './game-runner.js';
+import { createSession, processRoundResult } from '../../src/game-session';
 import {
   registerGameRunner,
   unregisterGameRunner,
@@ -164,6 +165,17 @@ router.post('/rooms/:id/start', requireAuth, (req: Request, res: Response) => {
   try {
     const room = startRoom(roomId, seatIndex);
 
+    // Create multi-round session
+    const session = createSession({
+      windRounds: room.settings.windRounds,
+      payment: {
+        base: room.settings.base,
+        taiCap: room.settings.taiCap,
+        shooterPays: room.settings.shooterPays,
+      },
+    });
+    room.sessionState = session;
+
     // Create broadcast function that sends to both WS and SSE
     const broadcast = (seat: number, type: string, data: unknown) => {
       sendToSeat(roomId, seat, type, data);
@@ -176,9 +188,31 @@ router.post('/rooms/:id/start', requireAuth, (req: Request, res: Response) => {
 
     // Start the game loop asynchronously
     runner.run().then(() => {
-      finishRoom(roomId);
-      // Keep runner registered for 60s so clients can poll the final roundOver state
-      setTimeout(() => unregisterGameRunner(roomId), 60_000);
+      // Round completed — process result into session
+      if (room.sessionState && runner.state.result) {
+        const { session: updated } = processRoundResult(room.sessionState, runner.state.result);
+        room.sessionState = updated;
+        console.log(`[API] Round complete in room ${roomId}. Session scores: ${updated.scores}, finished: ${updated.finished}`);
+
+        if (updated.finished) {
+          finishRoom(roomId);
+          setTimeout(() => unregisterGameRunner(roomId), 60_000);
+        } else if (room.settings.betweenRoundsTimeout > 0) {
+          // Auto-finish if host doesn't start next round in time
+          setTimeout(() => {
+            if (room.status === 'playing' && room.sessionState && !room.sessionState.finished) {
+              console.log(`[API] Between-rounds timeout in room ${roomId} — auto-finishing`);
+              finishRoom(roomId);
+              setTimeout(() => unregisterGameRunner(roomId), 60_000);
+            }
+          }, room.settings.betweenRoundsTimeout * 1000);
+        }
+        // If betweenRoundsTimeout is 0, keep runner registered indefinitely
+        // so clients can poll the roundOver state and request nextRound at their own pace.
+      } else {
+        finishRoom(roomId);
+        setTimeout(() => unregisterGameRunner(roomId), 60_000);
+      }
     }).catch(err => {
       console.error(`Game error in room ${roomId}:`, err);
       finishRoom(roomId);
@@ -186,6 +220,91 @@ router.post('/rooms/:id/start', requireAuth, (req: Request, res: Response) => {
     });
 
     res.json({ ok: true, room: sanitizeRoom(room) });
+  } catch (e: any) {
+    res.status(400).json({ error: e.message });
+  }
+});
+
+/** POST /api/rooms/:id/nextRound — Start the next round (host only). */
+router.post('/rooms/:id/nextRound', requireAuth, (req: Request, res: Response) => {
+  const { roomId, seatIndex, isHost } = (req as AuthenticatedRequest).auth;
+
+  if (roomId !== param(req, 'id')) {
+    res.status(403).json({ error: 'Token does not match this room' });
+    return;
+  }
+
+  if (!isHost) {
+    res.status(403).json({ error: 'Only the host can start the next round' });
+    return;
+  }
+
+  const room = getRoom(roomId);
+  if (!room) {
+    res.status(404).json({ error: 'Room not found' });
+    return;
+  }
+
+  if (room.status !== 'playing') {
+    res.status(400).json({ error: 'Room is not in playing state' });
+    return;
+  }
+
+  if (!room.sessionState) {
+    res.status(400).json({ error: 'No session in progress' });
+    return;
+  }
+
+  if (room.sessionState.finished) {
+    res.status(400).json({ error: 'Session is already finished' });
+    return;
+  }
+
+  try {
+    const broadcast = (seat: number, type: string, data: unknown) => {
+      sendToSeat(roomId, seat, type, data);
+      sendSSEToSeat(roomId, seat, type, data);
+    };
+
+    // Create new runner with updated dealer/wind from session state
+    const runner = new GameRunner(
+      room,
+      broadcast,
+      room.sessionState.dealerIndex,
+      room.sessionState.prevailingWind,
+    );
+    registerGameRunner(roomId, runner);
+
+    // Start the game loop asynchronously
+    runner.run().then(() => {
+      if (room.sessionState && runner.state.result) {
+        const { session: updated } = processRoundResult(room.sessionState, runner.state.result);
+        room.sessionState = updated;
+        console.log(`[API] Round complete in room ${roomId}. Session scores: ${updated.scores}, finished: ${updated.finished}`);
+
+        if (updated.finished) {
+          finishRoom(roomId);
+          setTimeout(() => unregisterGameRunner(roomId), 60_000);
+        } else if (room.settings.betweenRoundsTimeout > 0) {
+          setTimeout(() => {
+            if (room.status === 'playing' && room.sessionState && !room.sessionState.finished) {
+              console.log(`[API] Between-rounds timeout in room ${roomId} — auto-finishing`);
+              finishRoom(roomId);
+              setTimeout(() => unregisterGameRunner(roomId), 60_000);
+            }
+          }, room.settings.betweenRoundsTimeout * 1000);
+        }
+      } else {
+        finishRoom(roomId);
+        setTimeout(() => unregisterGameRunner(roomId), 60_000);
+      }
+    }).catch(err => {
+      console.error(`Game error in room ${roomId}:`, err);
+      finishRoom(roomId);
+      setTimeout(() => unregisterGameRunner(roomId), 60_000);
+    });
+
+    res.json({ ok: true });
   } catch (e: any) {
     res.status(400).json({ error: e.message });
   }
@@ -219,7 +338,11 @@ router.get('/rooms/:id/state', requireAuth, (req: Request, res: Response) => {
     return;
   }
 
-  res.json(runner.getStateForPlayer(seatIndex));
+  const filtered = runner.getStateForPlayer(seatIndex);
+  // Attach recent player messages for HTTP polling clients
+  const msgs = runner.getRecentMessages();
+  if (msgs.length > 0) filtered.recentMessages = msgs;
+  res.json(filtered);
 });
 
 /** POST /api/rooms/:id/action — Submit a player action. */

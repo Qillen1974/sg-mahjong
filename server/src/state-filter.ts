@@ -6,7 +6,7 @@
  * Wall/dead wall are replaced with counts.
  */
 
-import type { GameState, GameEvent, PlayerState, PlayerAction } from '../../src/game-types';
+import type { GameState, GameEvent, PlayerState, PlayerAction, SessionState } from '../../src/game-types';
 import type { Tile } from '../../src/tiles';
 import type { MeldedSet } from '../../src/scoring';
 
@@ -26,6 +26,15 @@ export interface FilteredPlayerState {
   discards: Tile[];
 }
 
+export interface SessionInfo {
+  scores: [number, number, number, number];
+  roundNumber: number;
+  dealerIndex: number;
+  prevailingWind: string;
+  finished: boolean;
+  windRounds: number;
+}
+
 export interface FilteredGameState {
   players: [FilteredPlayerState, FilteredPlayerState, FilteredPlayerState, FilteredPlayerState];
   wallCount: number;
@@ -39,6 +48,10 @@ export interface FilteredGameState {
   lastDiscard: Tile | null;
   lastDiscardPlayerIndex: number | null;
   result: GameState['result'];
+  /** Multi-round session info (present when room has a session). */
+  sessionInfo?: SessionInfo;
+  /** Recent player messages (trash talk) for HTTP polling clients. */
+  recentMessages?: Array<{ playerIndex: number; message: string }>;
 }
 
 // ---------------------------------------------------------------------------
@@ -58,8 +71,8 @@ function filterPlayer(player: PlayerState, isSelf: boolean): FilteredPlayerState
 }
 
 /** Filter full GameState so the given seat only sees their own hand. */
-export function filterStateForPlayer(state: GameState, seatIndex: number): FilteredGameState {
-  return {
+export function filterStateForPlayer(state: GameState, seatIndex: number, sessionState?: SessionState): FilteredGameState {
+  const filtered: FilteredGameState = {
     players: state.players.map((p, i) =>
       filterPlayer(p, i === seatIndex),
     ) as [FilteredPlayerState, FilteredPlayerState, FilteredPlayerState, FilteredPlayerState],
@@ -75,6 +88,19 @@ export function filterStateForPlayer(state: GameState, seatIndex: number): Filte
     lastDiscardPlayerIndex: state.lastDiscardPlayerIndex,
     result: state.result,
   };
+
+  if (sessionState) {
+    filtered.sessionInfo = {
+      scores: [...sessionState.scores] as [number, number, number, number],
+      roundNumber: sessionState.rounds.length + 1,
+      dealerIndex: sessionState.dealerIndex,
+      prevailingWind: sessionState.prevailingWind,
+      finished: sessionState.finished,
+      windRounds: sessionState.config.windRounds,
+    };
+  }
+
+  return filtered;
 }
 
 // ---------------------------------------------------------------------------

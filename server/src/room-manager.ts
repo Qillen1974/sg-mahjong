@@ -10,6 +10,7 @@
 import { v4 as uuidv4 } from 'uuid';
 import { MAX_ROOMS } from './config.js';
 import type { AgentConfig } from './agent-webhook.js';
+import type { SessionState } from '../../src/game-types';
 
 export type SeatType = 'human' | 'ai-standby' | 'agent' | 'empty';
 export type RoomStatus = 'waiting' | 'playing' | 'finished';
@@ -24,6 +25,10 @@ export interface RoomSettings {
   shooterPays: boolean;
   /** Wind rounds (1 = East only). */
   windRounds: number;
+  /** Turn timeout in seconds. 0 = no timeout (wait forever). */
+  turnTimeout: number;
+  /** Between-rounds timeout in seconds. 0 = no timeout (wait forever). */
+  betweenRoundsTimeout: number;
 }
 
 export interface Seat {
@@ -41,6 +46,8 @@ export interface Room {
   seats: [Seat, Seat, Seat, Seat];
   status: RoomStatus;
   createdAt: number;
+  /** Multi-round session state — created when the game starts. */
+  sessionState?: SessionState;
 }
 
 const rooms = new Map<string, Room>();
@@ -51,6 +58,8 @@ const DEFAULT_SETTINGS: RoomSettings = {
   taiCap: 5,
   shooterPays: true,
   windRounds: 1,
+  turnTimeout: 0,
+  betweenRoundsTimeout: 0,
 };
 
 function emptySeats(): [Seat, Seat, Seat, Seat] {

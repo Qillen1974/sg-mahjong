@@ -2,6 +2,7 @@ import { SessionController } from '@lib/game-session';
 import type { GameState, PlayerAction, SessionConfig, SessionState, GameEvent, SessionEvent } from '@lib/game-types';
 import type { Tile } from '@lib/tiles';
 import { tileKey } from '@lib/tiles';
+import { getTrashTalk } from '@lib/trash-talk';
 
 export type UpdateCallback = (state: GameState, session: SessionState) => void;
 export type BubbleCallback = (playerIndex: number, text: string) => void;
@@ -86,17 +87,34 @@ export class GameBridge {
       switch (e.type) {
         case 'tileDiscarded':
           this.onBubble(e.playerIndex, tileChinese(e.tile));
+          // AI trash talk on discard
+          if (e.playerIndex !== 0) {
+            const talk = getTrashTalk('discard');
+            if (talk) this.onBubble(e.playerIndex, talk);
+          }
           break;
         case 'meldDeclared': {
           const labels: Record<string, string> = {
             pung: 'Pong!', chow: 'Chow!', kong: 'Kong!',
           };
           this.onBubble(e.playerIndex, labels[e.meld.type] ?? 'Meld!');
+          // AI trash talk on meld
+          if (e.playerIndex !== 0) {
+            const context = e.meld.type === 'pung' ? 'pong' : e.meld.type;
+            const talk = getTrashTalk(context);
+            if (talk) this.onBubble(e.playerIndex, talk);
+          }
           break;
         }
         case 'gameOver':
           if (e.result.type === 'win' && e.result.winnerIndex !== undefined) {
             this.onBubble(e.result.winnerIndex, 'Hu!');
+            // AI trash talk on win
+            if (e.result.winnerIndex !== 0) {
+              const context = e.result.loserIndex !== undefined ? 'win' : 'selfWin';
+              const talk = getTrashTalk(context);
+              if (talk) this.onBubble(e.result.winnerIndex, talk);
+            }
           }
           break;
       }

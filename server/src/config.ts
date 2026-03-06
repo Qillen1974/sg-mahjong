@@ -5,7 +5,7 @@ export const PORT = parseInt(process.env.PORT ?? '3001', 10);
 /** How long players have to submit a claim (pong/kong/chow/win) in ms. */
 export const CLAIM_TIMEOUT_MS = 8_000;
 
-/** How long a player has to take their turn (draw/discard) in ms. */
+/** How long a player has to take their turn (draw/discard) in ms. 0 = no timeout. */
 export const TURN_TIMEOUT_MS = 15_000;
 
 /** Maximum concurrent rooms. */

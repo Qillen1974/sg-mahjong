@@ -37,8 +37,14 @@ export interface AgentConfig {
 // Main Entry
 // ---------------------------------------------------------------------------
 
+export interface AgentTurnResult {
+  action: PlayerAction;
+  trashTalk?: string;
+}
+
 /**
- * Handle an agent's turn. Calls LLM or webhook, returns the chosen action.
+ * Handle an agent's turn. Calls LLM or webhook, returns the chosen action
+ * and optional trash talk message.
  * Throws on failure (caller should fall back to heuristic AI).
  */
 export async function handleAgentTurn(
@@ -46,21 +52,22 @@ export async function handleAgentTurn(
   seatIndex: number,
   validActions: PlayerAction[],
   config: AgentConfig,
-): Promise<PlayerAction> {
+): Promise<AgentTurnResult> {
   const timeout = config.timeoutMs ?? AGENT_TURN_TIMEOUT_MS;
   const agentState = buildAgentState(state, seatIndex, validActions);
 
   for (let attempt = 0; attempt <= AGENT_MAX_RETRIES; attempt++) {
     try {
-      let action: PlayerAction | null = null;
+      let result: AgentTurnResult | null = null;
 
       if (config.llm) {
-        action = await callLLM(config.llm, agentState, validActions, timeout);
+        result = await callLLM(config.llm, agentState, validActions, timeout);
       } else if (config.webhookUrl) {
-        action = await callWebhook(config.webhookUrl, agentState, validActions, timeout);
+        const action = await callWebhook(config.webhookUrl, agentState, validActions, timeout);
+        if (action) result = { action };
       }
 
-      if (action) return action;
+      if (result) return result;
       console.warn(`[AgentTurn] Attempt ${attempt + 1}: no valid action returned`);
     } catch (err) {
       console.warn(`[AgentTurn] Attempt ${attempt + 1} failed:`, err);
@@ -79,7 +86,7 @@ async function callLLM(
   agentState: AgentFriendlyState,
   validActions: PlayerAction[],
   timeoutMs: number,
-): Promise<PlayerAction | null> {
+): Promise<AgentTurnResult | null> {
   const messages = buildPrompt(agentState, validActions);
 
   const controller = new AbortController();
@@ -165,7 +172,9 @@ function buildPrompt(
 Rules: Win > Kong > Pong > Chow > Discard isolated tiles > Pass.
 Keep pairs, triplets, sequences. Discard isolated tiles. Honor tiles (dragons, seat/prevailing wind) are valuable.
 
-Respond with ONLY: {"action": <number>, "reasoning": "<5 words max>"}`,
+You may optionally include a short trash talk message (1 sentence max) in "trashTalk" to taunt opponents.
+
+Respond with ONLY: {"action": <number>, "reasoning": "<5 words max>", "trashTalk": "<optional>"}`,
     },
     {
       role: 'user',
@@ -199,7 +208,7 @@ Choose the best action.`,
 function parseActionFromLLM(
   content: string,
   validActions: PlayerAction[],
-): PlayerAction | null {
+): AgentTurnResult | null {
   try {
     // Extract JSON from response (may be wrapped in markdown code blocks)
     const jsonMatch = content.match(/\{[\s\S]*?\}/);
@@ -214,7 +223,12 @@ function parseActionFromLLM(
     }
 
     console.log(`[AgentTurn] LLM chose action ${actionIndex}: ${validActions[actionIndex].type} — ${parsed.reasoning || ''}`);
-    return validActions[actionIndex];
+
+    const result: AgentTurnResult = { action: validActions[actionIndex] };
+    if (parsed.trashTalk && typeof parsed.trashTalk === 'string') {
+      result.trashTalk = parsed.trashTalk.slice(0, 100);
+    }
+    return result;
   } catch (err) {
     console.warn('[AgentTurn] Failed to parse LLM response:', content.slice(0, 200));
     return null;

@@ -85,10 +85,13 @@ export function renderGameScreen(ctx: ScreenContext): HTMLElement {
       showBubble(playerIndex, text);
     };
 
-    // Track drawn tile for visual gap
+    // Track drawn tile for visual gap + handle trash talk bubbles
     bridge.subscribeGame((event) => {
       if (event.type === 'tileDrawn' && event.playerIndex === 0) {
         lastDrawnTileId = event.tile.id;
+      }
+      if (event.type === 'playerMessage') {
+        showBubble(event.playerIndex, event.message, 3000);
       }
     });
   }
@@ -107,8 +110,8 @@ export function renderGameScreen(ctx: ScreenContext): HTMLElement {
     }
   }
 
-  /** Show a bubble for a player. */
-  function showBubble(playerIndex: number, text: string) {
+  /** Show a bubble for a player. Optional duration in ms (default 1800). */
+  function showBubble(playerIndex: number, text: string, durationMs = 1800) {
     console.log(`[bubble] showBubble called: player=${playerIndex}, text="${text}", overlay.parentNode=${!!bubbleOverlay.parentNode}`);
     const existing = bubbleTimers.get(playerIndex);
     if (existing) clearTimeout(existing);
@@ -118,33 +121,39 @@ export function renderGameScreen(ctx: ScreenContext): HTMLElement {
       bubbles.delete(playerIndex);
       bubbleTimers.delete(playerIndex);
       renderBubbles();
-    }, 1800));
+    }, durationMs));
   }
 
   /**
    * Detect state changes between polls and emit speech bubbles.
    * Compares previous and current filtered state to find discards, melds, wins.
    */
-  /** Track previous turn number to detect state advances. */
+  /** Track previous counts to detect state changes between polls. */
   let prevTurnNumber = -1;
-  let prevLastDiscardId: string | null = null;
+  let prevDiscardCounts: number[] = [0, 0, 0, 0];
   let prevMeldCounts: number[] = [0, 0, 0, 0];
 
   function detectBubblesFromStateChange(_prev: any, curr: any) {
     if (!curr || !curr.players) return;
 
     const currTurn = curr.turnNumber ?? 0;
-    console.log(`[bubble-detect] turn=${currTurn}, lastDiscard=${curr.lastDiscard?.id?.slice(0,8) ?? 'none'}, prevDiscard=${prevLastDiscardId?.slice(0,8) ?? 'none'}, phase=${curr.phase}`);
 
-    // Detect new discard via lastDiscard changing
-    if (curr.lastDiscard && curr.lastDiscardPlayerIndex !== null && curr.lastDiscardPlayerIndex !== undefined) {
-      const discardId = curr.lastDiscard.id ?? '';
-      if (discardId !== prevLastDiscardId) {
-        const tileName = cnTile(curr.lastDiscard);
-        console.log(`[bubble] Player ${curr.lastDiscardPlayerIndex} discarded: ${tileName} (turn ${currTurn})`);
-        showBubble(curr.lastDiscardPlayerIndex, tileName);
-        prevLastDiscardId = discardId;
+    // Detect new discards by tracking each player's discard array length.
+    // This is cumulative (like openMelds), so we catch all discards even if
+    // multiple happen between polls (e.g. agent claims are instant).
+    for (let i = 0; i < 4; i++) {
+      const p = curr.players[i];
+      if (!p) continue;
+      const currDiscardLen = p.discards?.length ?? 0;
+      if (currDiscardLen > prevDiscardCounts[i]) {
+        // Show bubble for the most recent discard only (not all missed ones)
+        const lastDiscard = p.discards[currDiscardLen - 1];
+        if (lastDiscard) {
+          const tileName = cnTile(lastDiscard);
+          showBubble(i, tileName);
+        }
       }
+      prevDiscardCounts[i] = currDiscardLen;
     }
 
     // Detect new melds
@@ -160,7 +169,6 @@ export function renderGameScreen(ctx: ScreenContext): HTMLElement {
         const label = labels[newMeld.type] ?? 'Meld!';
         const claimedTile = newMeld.tiles?.[0];
         const tileStr = claimedTile ? ` ${cnTile(claimedTile)}` : '';
-        console.log(`[bubble] Player ${i}: ${label}${tileStr}`);
         showBubble(i, `${label}${tileStr}`);
       }
       prevMeldCounts[i] = currMeldLen;
@@ -169,7 +177,6 @@ export function renderGameScreen(ctx: ScreenContext): HTMLElement {
     // Detect win
     if (curr.phase === 'roundOver' && curr.result && prevTurnNumber !== -1 && currTurn !== prevTurnNumber) {
       if (curr.result.type === 'win' && curr.result.winnerIndex !== undefined) {
-        console.log(`[bubble] Player ${curr.result.winnerIndex}: Hu!`);
         showBubble(curr.result.winnerIndex, 'Hu!');
       }
     }
@@ -361,8 +368,11 @@ export function renderGameScreen(ctx: ScreenContext): HTMLElement {
   if (isOnline && networkBridge) {
     // Online mode — wire up NetworkBridge
     networkBridge.onUpdate = () => render();
-    networkBridge.onBubble = (playerIndex: number, text: string) => {
-      showBubble(playerIndex, text);
+    // Bubbles are handled by detectBubblesFromStateChange (HTTP polling).
+    // Don't also listen to WS gameEvent bubbles — that causes duplicates.
+    // But playerMessage (trash talk) is WS-only, so wire it up separately.
+    networkBridge.onPlayerMessage = (playerIndex: number, text: string) => {
+      showBubble(playerIndex, text, 3000);
     };
 
     // Show waiting room immediately while connecting
@@ -555,6 +565,16 @@ export function renderGameScreen(ctx: ScreenContext): HTMLElement {
           detectBubblesFromStateChange(prevOnlineState, filteredState);
           prevOnlineState = JSON.parse(JSON.stringify(filteredState));
 
+          // Show trash talk from HTTP polling (playerMessage events)
+          if (filteredState.recentMessages) {
+            for (const msg of filteredState.recentMessages) {
+              // Only show if not already displaying a bubble for this player
+              if (!bubbles.has(msg.playerIndex)) {
+                showBubble(msg.playerIndex, msg.message, 3000);
+              }
+            }
+          }
+
           networkBridge.state = filteredState;
           networkBridge.validActions = validActions;
           render();
@@ -579,6 +599,14 @@ export function renderGameScreen(ctx: ScreenContext): HTMLElement {
   /** Render result screen for online mode (inline, no session navigation). */
   function renderOnlineResult(state: any): HTMLElement {
     const result = state.result as GameResult | null;
+    const sessionInfo = state.sessionInfo as {
+      scores: [number, number, number, number];
+      roundNumber: number;
+      dealerIndex: number;
+      prevailingWind: string;
+      finished: boolean;
+      windRounds: number;
+    } | undefined;
     const mySeat = isOnline && networkBridge ? networkBridge.mySeat : 0;
     const names = playerNames ?? ['You', 'Player 2', 'Player 3', 'Player 4'];
     const container = document.createElement('div');
@@ -607,10 +635,14 @@ export function renderGameScreen(ctx: ScreenContext): HTMLElement {
       }
     }
 
-    // Calculate payments
-    const payments = result ? calculatePayments(result, {
-      base: 0.20, taiCap: 5, shooterPays: true,
-    }) : { deltas: [0, 0, 0, 0] as [number, number, number, number] };
+    // Use session payment config if available, otherwise defaults
+    const paymentConfig = sessionInfo
+      ? { base: ctx.screenData?.roomSettings?.base ?? 0.20, taiCap: ctx.screenData?.roomSettings?.taiCap ?? 5, shooterPays: ctx.screenData?.roomSettings?.shooterPays ?? true }
+      : { base: 0.20, taiCap: 5, shooterPays: true };
+
+    // Calculate payments for this round
+    const payments = result ? calculatePayments(result, paymentConfig)
+      : { deltas: [0, 0, 0, 0] as [number, number, number, number] };
 
     const paymentRows = payments.deltas
       .map((d, i) => {
@@ -620,6 +652,60 @@ export function renderGameScreen(ctx: ScreenContext): HTMLElement {
       })
       .join('');
 
+    // Session total rows (if session info available)
+    let sessionTableHtml = '';
+    if (sessionInfo) {
+      const sessionRows = sessionInfo.scores
+        .map((s, i) => {
+          const sign = s > 0 ? '+' : '';
+          const cls = s > 0 ? 'positive' : s < 0 ? 'negative' : '';
+          return `<tr class="${cls}"><td>${names[i]}</td><td>${sign}$${s.toFixed(2)}</td></tr>`;
+        })
+        .join('');
+      const windNames: Record<string, string> = { east: 'East', south: 'South', west: 'West', north: 'North' };
+      const windLabel = windNames[sessionInfo.prevailingWind] ?? sessionInfo.prevailingWind;
+      sessionTableHtml = `
+        <div class="result-table">
+          <h3>Session Total</h3>
+          <p class="session-meta">Round ${sessionInfo.roundNumber} &bull; ${windLabel} Wind</p>
+          <table>${sessionRows}</table>
+        </div>
+      `;
+    }
+
+    // Determine action buttons
+    const isHost = ctx.screenData?.isHost ?? false;
+    const sessionFinished = sessionInfo?.finished ?? true;
+
+    let actionsHtml = '';
+    if (sessionInfo && !sessionFinished && isHost) {
+      actionsHtml = `
+        <div class="result-actions">
+          <button class="btn btn-primary btn-large" id="btn-next-round">Next Round</button>
+          <button class="btn btn-secondary" id="btn-back-lobby">Back to Lobby</button>
+        </div>
+      `;
+    } else if (sessionInfo && !sessionFinished && !isHost) {
+      actionsHtml = `
+        <div class="result-actions">
+          <p class="waiting-hint">Waiting for host to start next round...</p>
+          <button class="btn btn-secondary" id="btn-back-lobby">Back to Lobby</button>
+        </div>
+      `;
+    } else if (sessionInfo && sessionFinished) {
+      actionsHtml = `
+        <div class="result-actions">
+          <button class="btn btn-primary btn-large" id="btn-back-lobby">Finish</button>
+        </div>
+      `;
+    } else {
+      actionsHtml = `
+        <div class="result-actions">
+          <button class="btn btn-primary btn-large" id="btn-back-lobby">Back to Lobby</button>
+        </div>
+      `;
+    }
+
     container.innerHTML = `
       <h2>${heading}</h2>
       ${details}
@@ -628,16 +714,76 @@ export function renderGameScreen(ctx: ScreenContext): HTMLElement {
           <h3>This Round</h3>
           <table>${paymentRows}</table>
         </div>
+        ${sessionTableHtml}
       </div>
-      <div class="result-actions">
-        <button class="btn btn-primary btn-large" id="btn-back-lobby">Back to Lobby</button>
-      </div>
+      ${actionsHtml}
     `;
 
     container.querySelector('#btn-back-lobby')?.addEventListener('click', () => {
       networkBridge?.disconnect();
       ctx.navigate('lobby');
     });
+
+    container.querySelector('#btn-next-round')?.addEventListener('click', async () => {
+      const btn = container.querySelector('#btn-next-round') as HTMLButtonElement;
+      btn.disabled = true;
+      btn.textContent = 'Starting...';
+
+      try {
+        const serverUrl = ctx.screenData.serverUrl;
+        const roomId = ctx.screenData.roomId;
+        const token = ctx.screenData.token;
+
+        const res = await fetch(`${serverUrl}/api/rooms/${roomId}/nextRound`, {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json',
+          },
+        });
+
+        if (!res.ok) {
+          const err = await res.json();
+          alert(err.error || 'Failed to start next round');
+          btn.disabled = false;
+          btn.textContent = 'Next Round';
+          return;
+        }
+
+        // Resume game polling
+        startGamePolling(serverUrl, roomId, token);
+      } catch (e) {
+        alert('Failed to start next round');
+        btn.disabled = false;
+        btn.textContent = 'Next Round';
+      }
+    });
+
+    // Non-host: poll for next round to start
+    if (sessionInfo && !sessionFinished && !isHost) {
+      const serverUrl = ctx.screenData.serverUrl;
+      const roomId = ctx.screenData.roomId;
+      const token = ctx.screenData.token;
+
+      const waitPoller = setInterval(async () => {
+        try {
+          const res = await fetch(`${serverUrl}/api/rooms/${roomId}/state`, {
+            headers: { 'Authorization': `Bearer ${token}` },
+          });
+          if (!res.ok) return;
+          const newState = await res.json();
+          if (newState && newState.phase && newState.phase !== 'roundOver') {
+            // New round started — resume game polling
+            clearInterval(waitPoller);
+            startGamePolling(serverUrl, roomId, token);
+          }
+        } catch { /* ignore */ }
+      }, 2000);
+
+      // Clean up poller if user navigates away
+      const origClick = container.querySelector('#btn-back-lobby');
+      origClick?.addEventListener('click', () => clearInterval(waitPoller));
+    }
 
     return container;
   }

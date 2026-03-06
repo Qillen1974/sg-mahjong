@@ -51,6 +51,29 @@ export function renderLobbyScreen(ctx: ScreenContext): HTMLElement {
           <div class="create-form">
             <input type="text" id="room-name" placeholder="Room name" value="Mahjong Room" class="lobby-input" />
             <input type="text" id="player-name" placeholder="Your name" value="Player" class="lobby-input" />
+            <details class="game-options" open>
+              <summary>Game Options</summary>
+              <div class="game-options-fields">
+                <label>
+                  Turn Timeout
+                  <select id="turn-timeout" class="lobby-input">
+                    <option value="0" selected>No limit</option>
+                    <option value="15">15 seconds</option>
+                    <option value="30">30 seconds</option>
+                    <option value="60">60 seconds</option>
+                  </select>
+                </label>
+                <label>
+                  Between Rounds Timeout
+                  <select id="between-rounds-timeout" class="lobby-input">
+                    <option value="0" selected>No limit</option>
+                    <option value="300">5 minutes</option>
+                    <option value="600">10 minutes</option>
+                    <option value="1800">30 minutes</option>
+                  </select>
+                </label>
+              </div>
+            </details>
             <button class="btn btn-primary" id="btn-create">Create</button>
           </div>
         </div>
@@ -138,15 +161,19 @@ export function renderLobbyScreen(ctx: ScreenContext): HTMLElement {
   async function handleCreate() {
     const nameInput = screen.querySelector('#room-name') as HTMLInputElement;
     const playerInput = screen.querySelector('#player-name') as HTMLInputElement;
+    const turnTimeoutSelect = screen.querySelector('#turn-timeout') as HTMLSelectElement;
+    const betweenRoundsSelect = screen.querySelector('#between-rounds-timeout') as HTMLSelectElement;
     const roomName = nameInput.value.trim() || 'Mahjong Room';
     const playerName = playerInput.value.trim() || 'Player';
+    const turnTimeout = parseInt(turnTimeoutSelect.value, 10);
+    const betweenRoundsTimeout = parseInt(betweenRoundsSelect.value, 10);
 
     try {
       const res = await fetch(`${SERVER}/api/rooms`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          settings: { name: roomName },
+          settings: { name: roomName, turnTimeout, betweenRoundsTimeout },
           playerName,
         }),
       });
