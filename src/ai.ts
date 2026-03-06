@@ -1,8 +1,8 @@
 /**
  * AI Module for Singapore Mahjong
  *
- * Uses MiniMax 2.1 API for decisions with a rule-based fallback strategy.
- * Reads MINIMAX_API_KEY from environment. Falls back to strategy
+ * Uses Qwen 3 Coder Plus (Bailian) for decisions with a rule-based fallback strategy.
+ * Reads LLM_API_KEY from environment. Falls back to strategy
  * if the API is unavailable or times out (5 seconds).
  */
 
@@ -19,12 +19,12 @@ export interface AIDecision {
   trashtalk?: string;
 }
 
-interface MiniMaxMessage {
+interface LLMMessage {
   role: 'system' | 'user' | 'assistant';
   content: string;
 }
 
-interface MiniMaxResponse {
+interface LLMResponse {
   choices?: Array<{
     message?: {
       content?: string;
@@ -36,8 +36,8 @@ interface MiniMaxResponse {
 // Configuration
 // ---------------------------------------------------------------------------
 
-const MINIMAX_API_URL = 'https://api.minimax.io/v1/chat/completions';
-const MINIMAX_MODEL = 'MiniMax-M2.1';
+const LLM_API_URL = 'https://coding-intl.dashscope.aliyuncs.com/v1/chat/completions';
+const LLM_MODEL = 'qwen3-coder-plus';
 const API_TIMEOUT_MS = 5000;
 
 // ---------------------------------------------------------------------------
@@ -60,18 +60,18 @@ export async function getAIDecision(
     return { action: validActions[0], reasoning: 'Only one option' };
   }
 
-  // Try MiniMax API — check Vite env (browser) then Node env (tests)
+  // Try LLM API — check Vite env (browser) then Node env (tests)
   const apiKey =
-    import.meta.env.VITE_MINIMAX_API_KEY ||
-    (typeof process !== 'undefined' && process.env?.MINIMAX_API_KEY) ||
+    import.meta.env.VITE_LLM_API_KEY ||
+    (typeof process !== 'undefined' && process.env?.LLM_API_KEY) ||
     undefined;
   if (apiKey) {
     try {
-      const apiResult = await callMiniMaxAPI(state, playerIndex, validActions, apiKey);
+      const apiResult = await callLLMAPI(state, playerIndex, validActions, apiKey);
       if (apiResult) return apiResult;
-      console.warn(`[AI] MiniMax returned no usable result for player ${playerIndex}, using fallback`);
+      console.warn(`[AI] LLM returned no usable result for player ${playerIndex}, using fallback`);
     } catch (e) {
-      console.warn(`[AI] MiniMax API error for player ${playerIndex}:`, e);
+      console.warn(`[AI] LLM API error for player ${playerIndex}:`, e);
     }
   }
 
@@ -87,7 +87,7 @@ function buildPrompt(
   state: GameState,
   playerIndex: number,
   validActions: PlayerAction[],
-): MiniMaxMessage[] {
+): LLMMessage[] {
   const player = state.players[playerIndex];
   const handStr = player.handTiles.map(t => t.name).join(', ');
   const meldsStr = player.openMelds.length > 0
@@ -156,7 +156,7 @@ Choose the best action.`,
   ];
 }
 
-async function callMiniMaxAPI(
+async function callLLMAPI(
   state: GameState,
   playerIndex: number,
   validActions: PlayerAction[],
@@ -168,14 +168,14 @@ async function callMiniMaxAPI(
   const timeout = setTimeout(() => controller.abort(), API_TIMEOUT_MS);
 
   try {
-    const response = await fetch(MINIMAX_API_URL, {
+    const response = await fetch(LLM_API_URL, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         'Authorization': `Bearer ${apiKey}`,
       },
       body: JSON.stringify({
-        model: MINIMAX_MODEL,
+        model: LLM_MODEL,
         messages,
         temperature: 0.3,
       }),
@@ -184,7 +184,7 @@ async function callMiniMaxAPI(
 
     if (!response.ok) return null;
 
-    const data: MiniMaxResponse = await response.json();
+    const data: LLMResponse = await response.json();
     const content = data.choices?.[0]?.message?.content;
     if (!content) return null;
 
@@ -212,7 +212,7 @@ function parseAPIResponse(
 
     return {
       action: validActions[actionIndex],
-      reasoning: parsed.reasoning || 'MiniMax API decision',
+      reasoning: parsed.reasoning || 'LLM API decision',
       trashtalk: parsed.trashtalk || undefined,
     };
   } catch {

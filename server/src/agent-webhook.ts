@@ -17,7 +17,7 @@ import { AGENT_TURN_TIMEOUT_MS, AGENT_MAX_RETRIES } from './config.js';
 // ---------------------------------------------------------------------------
 
 export interface AgentLLMConfig {
-  /** OpenAI-compatible API base URL (e.g. https://api.minimax.chat/v1/chat/completions). */
+  /** OpenAI-compatible API base URL (e.g. https://coding-intl.dashscope.aliyuncs.com/v1/chat/completions). */
   endpoint: string;
   apiKey: string;
   model: string;
@@ -122,7 +122,7 @@ async function callLLM(
       return null;
     }
 
-    // Strip <think>...</think> blocks (MiniMax M2.1 chain-of-thought)
+    // Strip <think>...</think> blocks (LLM chain-of-thought)
     const content = rawContent.replace(/<think>[\s\S]*?<\/think>/g, '').trim();
     if (!content) {
       console.warn(`[AgentTurn] LLM response was only <think> block (${rawContent.length} chars)`);
