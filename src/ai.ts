@@ -62,7 +62,7 @@ export async function getAIDecision(
 
   // Try MiniMax API — check Vite env (browser) then Node env (tests)
   const apiKey =
-    (typeof import.meta !== 'undefined' && (import.meta as any).env?.VITE_MINIMAX_API_KEY) ||
+    import.meta.env?.VITE_MINIMAX_API_KEY ||
     (typeof process !== 'undefined' && process.env?.MINIMAX_API_KEY) ||
     undefined;
   if (apiKey) {
