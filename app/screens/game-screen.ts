@@ -676,6 +676,7 @@ export function renderGameScreen(ctx: ScreenContext): HTMLElement {
     // Determine action buttons
     const isHost = ctx.screenData?.isHost ?? false;
     const sessionFinished = sessionInfo?.finished ?? true;
+    console.log(`[result] isHost=${isHost}, sessionInfo=${!!sessionInfo}, finished=${sessionFinished}`);
 
     let actionsHtml = '';
     if (sessionInfo && !sessionFinished && isHost) {
