@@ -1,7 +1,7 @@
 /**
  * AI Module for Singapore Mahjong
  *
- * Uses MiniMax 2.5 API for decisions with a rule-based fallback strategy.
+ * Uses MiniMax 2.1 API for decisions with a rule-based fallback strategy.
  * Reads MINIMAX_API_KEY from environment. Falls back to strategy
  * if the API is unavailable or times out (5 seconds).
  */
@@ -16,6 +16,7 @@ import { GameState, PlayerAction } from './game-types';
 export interface AIDecision {
   action: PlayerAction;
   reasoning?: string;
+  trashtalk?: string;
 }
 
 interface MiniMaxMessage {
@@ -36,7 +37,7 @@ interface MiniMaxResponse {
 // ---------------------------------------------------------------------------
 
 const MINIMAX_API_URL = 'https://api.minimax.io/v1/chat/completions';
-const MINIMAX_MODEL = 'MiniMax-M2.5';
+const MINIMAX_MODEL = 'MiniMax-M2.1';
 const API_TIMEOUT_MS = 5000;
 
 // ---------------------------------------------------------------------------
@@ -121,7 +122,18 @@ function buildPrompt(
   return [
     {
       role: 'system',
-      content: `You are a Singapore Mahjong AI player. Respond with ONLY a JSON object: {"action": <number>, "reasoning": "<brief explanation>"}. The action number corresponds to one of the valid actions listed.`,
+      content: `You are a Singapore Mahjong AI player with a fun, competitive personality. You love to trash talk in Singlish/Singapore style.
+
+Respond with ONLY a JSON object: {"action": <number>, "reasoning": "<brief explanation>", "trashtalk": "<short witty remark>"}
+
+Rules for trashtalk:
+- Keep it short (under 15 words), playful and funny
+- Use Singlish flavour (lah, lor, wah, siao, alamak, etc.)
+- React to the actual game situation (what you're discarding, claiming, or what opponents did)
+- Sometimes taunt, sometimes bluff, sometimes be dramatic
+- About 50% of the time, set trashtalk to null (don't overdo it)
+
+The action number corresponds to one of the valid actions listed.`,
     },
     {
       role: 'user',
@@ -201,6 +213,7 @@ function parseAPIResponse(
     return {
       action: validActions[actionIndex],
       reasoning: parsed.reasoning || 'MiniMax API decision',
+      trashtalk: parsed.trashtalk || undefined,
     };
   } catch {
     return null;

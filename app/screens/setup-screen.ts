@@ -28,9 +28,9 @@ export function renderSetupScreen(ctx: ScreenContext): HTMLElement {
         <label class="setup-field">
           <span>Wind rounds</span>
           <select id="wind-rounds">
-            <option value="1" selected>East only (short)</option>
+            <option value="1">East only (short)</option>
             <option value="2">East + South</option>
-            <option value="4">Full game (4 winds)</option>
+            <option value="4" selected>Full game (4 winds)</option>
           </select>
         </label>
       </div>

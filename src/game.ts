@@ -1015,6 +1015,10 @@ export async function stepGame(state: GameState): Promise<{
         break;
     }
 
+    if (decision.trashtalk) {
+      result.events.push({ type: 'playerMessage', playerIndex: pi, message: decision.trashtalk });
+    }
+
     return { state: result.state, events: result.events, done: false };
   }
 
@@ -1038,6 +1042,7 @@ async function resolveClaimWindow(
     playerIndex: number;
     action: PlayerAction;
     priority: number; // higher = better
+    trashtalk?: string;
   }
 
   const claims: Claim[] = [];
@@ -1060,6 +1065,7 @@ async function resolveClaimWindow(
     if (decision.action.type === 'pass') continue;
 
     let priority = 0;
+    const trashtalk = decision.trashtalk;
     switch (decision.action.type) {
       case 'claimWin': priority = 100; break;
       case 'claimPong': priority = 50; break;
@@ -1071,7 +1077,7 @@ async function resolveClaimWindow(
     const distance = (i - discarderIdx + 4) % 4;
     priority += (4 - distance); // closer = higher
 
-    claims.push({ playerIndex: i, action: decision.action, priority });
+    claims.push({ playerIndex: i, action: decision.action, priority, trashtalk });
   }
 
   // No claims — pass
@@ -1083,20 +1089,33 @@ async function resolveClaimWindow(
   claims.sort((a, b) => b.priority - a.priority);
   const best = claims[0];
 
+  let result: { state: GameState; events: GameEvent[] };
+
   switch (best.action.type) {
     case 'claimWin':
-      return claimWin(state, best.playerIndex);
+      result = claimWin(state, best.playerIndex);
+      break;
     case 'claimPong':
-      return claimPong(state, best.playerIndex);
+      result = claimPong(state, best.playerIndex);
+      break;
     case 'claimKong':
-      return claimKong(state, best.playerIndex);
+      result = claimKong(state, best.playerIndex);
+      break;
     case 'claimChow': {
       const chowAction = best.action as { type: 'claimChow'; chowTiles: [Tile, Tile] };
-      return claimChow(state, best.playerIndex, chowAction.chowTiles);
+      result = claimChow(state, best.playerIndex, chowAction.chowTiles);
+      break;
     }
     default:
-      return passClaim(state);
+      result = passClaim(state);
+      break;
   }
+
+  if (best.trashtalk) {
+    result.events.push({ type: 'playerMessage', playerIndex: best.playerIndex, message: best.trashtalk });
+  }
+
+  return result;
 }
 
 /**
@@ -1172,6 +1191,10 @@ export async function advanceGame(
           // Shouldn't happen, but default to discarding first tile
           result = discardTile(current, current.players[pi].handTiles[0]);
           break;
+      }
+
+      if (decision.trashtalk) {
+        result.events.push({ type: 'playerMessage', playerIndex: pi, message: decision.trashtalk });
       }
 
       current = result.state;
