@@ -267,11 +267,11 @@ export class GameRunner {
       }
     }
 
-    // Notify active human players who can claim
+    // Notify human players who can claim (including auto-AI — they can reclaim by acting)
     const humanClaimers: number[] = [];
     for (let i = 0; i < 4; i++) {
       if (i === lastDiscardPlayer) continue;
-      if (this.room.seats[i].type === 'human' && !this.isAutoAI(i)) {
+      if (this.room.seats[i].type === 'human') {
         const actions = getValidActions(this.state, i);
         if (actions.length > 0 && actions.some(a => a.type !== 'pass')) {
           humanClaimers.push(i);
@@ -280,7 +280,7 @@ export class GameRunner {
       }
     }
 
-    // Wait for human claims (agents already resolved instantly above)
+    // Always wait for human claims — no timeout so the player never misses a claim
     if (humanClaimers.length > 0) {
       await this.waitForClaims(humanClaimers);
     }
@@ -289,7 +289,7 @@ export class GameRunner {
     this.resolveClaimWindow();
   }
 
-  /** Wait for all human claimers to submit or timeout. */
+  /** Wait for all human claimers to submit — no timeout, waits indefinitely. */
   private waitForClaims(claimers: number[]): Promise<void> {
     const remaining = new Set(claimers);
 
@@ -307,16 +307,8 @@ export class GameRunner {
         }
       };
 
-      // Start timeout
-      this.claimTimer = setTimeout(() => {
-        // Auto-pass for anyone who didn't respond
-        for (const idx of remaining) {
-          if (!this.pendingClaims.has(idx)) {
-            this.pendingClaims.set(idx, { type: 'pass' });
-          }
-        }
-        resolve();
-      }, CLAIM_TIMEOUT_MS);
+      // No timeout — wait for the human player to decide.
+      // This ensures they never miss a pong/kong/win opportunity.
 
       // Check if already resolved (all AI claims counted)
       this.claimResolve();
